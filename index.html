@@ -1,0 +1,592 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#080d18">
+<meta name="description" content="OpportunityHQ by HaydenWorks. Simple, calm, action first.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
+<title>OpportunityHQ | HaydenWorks</title>
+<style>
+:root{
+  --ink:#f4f7fd; --muted:#9db0c6; --cyan:#1fe2ff; --gold:#d7b36a;
+  --card:rgba(16,24,39,.92); --line:rgba(120,160,190,.22);
+  --btn:#16233a; --btn2:#1a2c47;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; color:var(--ink); font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:18px; line-height:1.45;
+  background:
+    radial-gradient(900px 600px at 18% 8%, rgba(31,226,255,.14), transparent 60%),
+    radial-gradient(800px 700px at 85% 90%, rgba(215,179,106,.10), transparent 60%),
+    linear-gradient(160deg,#0a1220 0%,#080d18 55%,#0a1626 100%);
+  display:flex; align-items:center; justify-content:center;
+  min-height:100vh; padding:22px 16px; overflow-x:hidden;
+}
+button,input,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--cyan); outline-offset:3px}
+.panel{
+  position:relative; width:min(560px,100%); background:var(--card);
+  border:1px solid var(--line); border-radius:28px;
+  box-shadow:0 30px 80px rgba(0,0,0,.5), 0 4px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.05);
+  padding:38px 30px 34px; backdrop-filter:blur(10px);
+  animation:hover 7s ease-in-out infinite;
+}
+@keyframes hover{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+.panel.enter{animation:hover 7s ease-in-out infinite, rise .38s ease both}
+@keyframes rise{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion: reduce){
+  .panel,.panel.enter{animation:none}
+}
+h1.title{
+  font-size:clamp(26px,6vw,34px); line-height:1.15; letter-spacing:-.5px;
+  margin:0 0 26px; font-weight:760; text-align:center;
+}
+h1.title .tag{
+  display:inline-block; vertical-align:middle; margin-left:10px; padding:4px 12px;
+  font-size:13px; font-weight:700; letter-spacing:.6px; color:#0a1420;
+  background:var(--gold); border-radius:999px;
+}
+.stack{display:flex; flex-direction:column; gap:14px}
+.bigbtn{
+  width:100%; min-height:64px; padding:16px 20px; text-align:center;
+  background:linear-gradient(180deg,var(--btn2),var(--btn));
+  border:1px solid var(--line); border-radius:20px; color:var(--ink);
+  font-size:19px; font-weight:650; transition:transform .12s ease, border-color .12s ease;
+}
+.bigbtn:hover{transform:translateY(-2px); border-color:rgba(31,226,255,.55)}
+.bigbtn:active{transform:translateY(0)}
+.bigbtn.primary{background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a; border-color:transparent; font-weight:780}
+.bigbtn .count{color:var(--cyan); font-weight:800}
+.bigbtn.primary .count{color:#04121a}
+.field{
+  width:100%; min-height:60px; padding:15px 18px; margin:0 0 14px;
+  background:#0c1626; border:1px solid var(--line); border-radius:18px; color:var(--ink); font-size:18px;
+}
+.field::placeholder{color:#7186a0}
+textarea.field{min-height:110px; resize:vertical}
+.quiet{
+  display:block; margin:20px auto 0; background:none; border:0; color:var(--muted);
+  font-size:15px; padding:10px 14px; text-decoration:underline; text-underline-offset:4px;
+}
+.demo{margin:22px 0 0; text-align:center; font-size:12px; letter-spacing:1.6px; color:#5f748e; text-transform:uppercase}
+.backbtn,.helpbtn{
+  position:absolute; width:48px; height:48px; border-radius:50%;
+  background:rgba(22,35,58,.9); border:1px solid var(--line); color:var(--ink);
+  font-size:21px; display:grid; place-items:center; z-index:3;
+}
+.backbtn{top:16px; left:16px}
+.helpbtn{bottom:16px; right:16px; color:var(--gold); font-weight:800}
+.with-corners{padding-top:52px}
+.rows{display:flex; flex-direction:column; gap:12px}
+.row{
+  display:flex; justify-content:space-between; align-items:center; gap:16px;
+  padding:17px 20px; background:rgba(22,35,58,.55); border:1px solid var(--line); border-radius:18px;
+  font-size:17px; width:100%; text-align:left; color:var(--ink);
+}
+button.row:hover{border-color:rgba(31,226,255,.55)}
+.row b{font-weight:750; text-align:right}
+.row .sub{display:block; font-size:14px; color:var(--muted); font-weight:500; margin-top:2px}
+.leadbtn{justify-content:flex-start; flex-direction:column; align-items:stretch; gap:4px}
+.leadbtn .lt{font-size:19px; font-weight:700}
+.leadbtn .lm{font-size:15px; color:var(--muted)}
+.empty{text-align:center; color:var(--muted); padding:26px 6px; font-size:17px}
+.saved{text-align:center; font-size:19px; font-weight:700; padding:4px 0 16px}
+.searchbox{margin-bottom:16px}
+.overlay{position:fixed; inset:0; background:rgba(2,6,14,.55); display:flex; align-items:center; justify-content:center; padding:20px; z-index:50}
+.popup{position:relative; width:min(420px,100%); background:rgba(18,28,46,.97); border:1px solid var(--line); border-radius:24px; padding:30px 24px 26px; box-shadow:0 30px 80px rgba(0,0,0,.55); animation:rise .25s ease both}
+.popup h2{margin:0 0 20px; text-align:center; font-size:24px}
+.xbtn{position:absolute; top:12px; right:12px; width:42px; height:42px; border-radius:50%; background:rgba(22,35,58,.9); border:1px solid var(--line); color:var(--ink); font-size:18px}
+.toast{text-align:center; color:var(--cyan); font-size:15px; font-weight:650; margin-top:14px; min-height:20px}
+@media (max-width:480px){
+  body{padding:14px 10px}
+  .panel{padding:30px 20px 28px; border-radius:24px}
+  .with-corners{padding-top:48px}
+  .bigbtn{font-size:18px; min-height:60px}
+}
+</style>
+</head>
+<body>
+<main class="panel enter" id="panel" aria-live="polite"></main>
+<div id="popupRoot"></div>
+
+<script>
+(()=>{'use strict';
+/* OpportunityHQ Next — PRODUCTION web build (PRODUCTION-PLAN P0-9).
+   Same approved floating UI as the staging prototype, with the demo core
+   removed:
+   - No fixture tenants or leads anywhere. Every record comes from the API.
+   - No persistence: the access token and all tenant data live in memory
+     only. Nothing is written to web storage; a reload means a fresh login.
+   - Session bootstrap via /api/me. No session = Login only, fail closed:
+     an API error shows an error state, never fixture data.
+   - Auth is the managed IdP (Supabase Auth REST). This build never sees
+     or stores a password beyond the sign-in request itself.
+   - Status changes are commands: POST /api/leads/:id/status with an
+     Idempotency-Key. A 202 means "validated", not "saved": the lead is
+     flagged as saving until a later refresh shows the verified state. */
+let CONFIG=null;        // GET /api/config: public bootstrap config
+let ACCESS_TOKEN=null;  // in memory only, never persisted
+let DATA=null;          // { slug: { name, version, leads: [...] } }
+const state={
+  screen:'login',
+  tenant:null,
+  user:null,
+  tenants:[],
+  lastOppView:null,
+  lastInsightsView:null,
+  lastSearch:'',
+  county:null, oppView:null, selected:null, savedMsg:false,
+  loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
+};
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function loadConfig(){
+  if(CONFIG) return CONFIG;
+  const r=await fetch('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/config');
+  if(!r.ok) throw new Error('config_unavailable');
+  CONFIG=await r.json();
+  return CONFIG;
+}
+function tenantMeta(slug){
+  const t=(CONFIG?.tenants||[]).find(x=>x.slug===slug);
+  return t?{name:t.name, version:t.version}:{name:slug, version:'full'};
+}
+async function api(path, opts={}){
+  const r=await fetch(path,{...opts, headers:{'Content-Type':'application/json', ...(ACCESS_TOKEN?{Authorization:'Bearer '+ACCESS_TOKEN}:{}), ...(opts.headers||{})}});
+  let j={}; try{ j=await r.json(); }catch{}
+  if(!r.ok) throw Object.assign(new Error(j.error||('HTTP '+r.status)), {status:r.status, code:j.error});
+  return j;
+}
+async function idp(path, body){
+  const cfg=await loadConfig();
+  if(!cfg.supabaseUrl||!cfg.supabaseAnonKey) throw new Error('Sign-in is not available yet.');
+  const r=await fetch(cfg.supabaseUrl+'/auth/v1'+path,{method:'POST', headers:{'Content-Type':'application/json', apikey:cfg.supabaseAnonKey}, body:JSON.stringify(body)});
+  let j={}; try{ j=await r.json(); }catch{}
+  if(!r.ok) throw new Error(j.error_description||j.msg||j.error||'Sign-in failed.');
+  return j;
+}
+function toLead(row){
+  const contacts=Array.isArray(row.contacts)?row.contacts:[];
+  const posted=row.source_posted_at||row.source_updated_at||row.created_at;
+  const age=posted?Math.max(0,Math.round((Date.now()-new Date(posted).getTime())/3600000)):0;
+  const first=contacts[0];
+  const route=first?(first.kind==='email'?'Verified email':first.kind==='phone'?'Phone':(first.label||'Source profile')):(row.source_platform||'Research needed');
+  return {
+    id: row.source_record_id||row.id,
+    title: row.title,
+    type: row.lead_type||'trigger',
+    area: row.area||'Market not set',
+    intent: row.summary||'',
+    route, tier: row.contact_tier||'D',
+    status: row.operator_status||'new',
+    age, contacts,
+    updatedAt: row.source_updated_at||null,
+    pendingSync: false
+  };
+}
+async function loadTenantData(slug){
+  const r=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/leads?tenant='+encodeURIComponent(slug));
+  const meta=tenantMeta(slug);
+  DATA=DATA||{};
+  DATA[slug]={name:meta.name, version:meta.version, leads:(r.leads||[]).map(toLead)};
+}
+async function bootstrap(){
+  // Session bootstrap: /api/me is the only source of who this is and
+  // which HQs they may see. No token in memory = no session = Login.
+  if(!ACCESS_TOKEN){ go('login'); return; }
+  state.busy=true; render();
+  try{
+    const me=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/me');
+    state.user=me.email;
+    state.tenants=me.tenants||[];
+    DATA={};
+    for(const t of state.tenants) await loadTenantData(t.tenant);
+    state.busy=false;
+    if(!state.tenants.length){ state.loginErr='Your account is ready. HaydenWorks still needs to attach your HQ.'; go('login'); return; }
+    if(state.tenants.length===1){ state.tenant=state.tenants[0].tenant; go('home'); } else go('choose');
+  }catch(e){
+    state.busy=false;
+    ACCESS_TOKEN=null; DATA=null; state.tenants=[]; state.tenant=null;
+    state.fatalErr='We could not load your HQ. Check your connection and try again.';
+    go('error');
+  }
+}
+const info=()=>DATA[state.tenant];
+const leads=()=> (DATA[state.tenant].leads||[]);
+const fresh=l=>l.status==='new'&&l.age<12;
+const strength=l=>({A:4,B:3,C:2,D:1}[l.tier]||0)*10+(l.type==='direct'?5:0)-Math.min(l.age/24,5);
+const typeLabel=l=>l.type==='direct'?'Direct lead':'Project trigger';
+const statusLabel=s=>({new:'New',reviewing:'Reviewing',contact_planned:'Contact planned',interested:'Interested',outreach_attempted:'Outreach attempted',outreach_sent:'Outreach sent',engaged:'Engaged',qualified:'Qualified',application_started:'Application started',submitted_to_provider:'Submitted to provider',funded:'Funded',funded_elsewhere:'Funded elsewhere',nurture:'Follow up',passed:'Passed',disqualified:'Disqualified',closed_lost:'Closed lost',closed:'Closed',expired:'Expired'})[s]||s;
+
+function go(screen){state.screen=screen;state.savedMsg=false;render()}
+function corners(backTarget){
+  return (backTarget?`<button class="backbtn" data-back="${backTarget}" aria-label="Back">←</button>`:'')
+       + `<button class="helpbtn" data-nav="help" aria-label="Help">?</button>`;
+}
+function cornersLite(backTarget){ return `<button class="backbtn" data-back="${backTarget}" aria-label="Back">←</button>`; }
+function panel(html,cornersHtml){
+  $('panel').className='panel enter'+(cornersHtml?' with-corners':'');
+  $('panel').innerHTML=html+(cornersHtml||'');
+}
+
+function vLoading(){
+  panel(`<h1 class="title">Loading</h1><div class="empty">One moment.</div>`);
+}
+function vError(){
+  panel(`<h1 class="title">Something went wrong</h1>
+  <div class="empty">${esc(state.fatalErr||'Please try again.')}</div>
+  <div class="stack"><button class="bigbtn primary" id="retryBtn">Try again</button></div>`);
+}
+function vLogin(){
+  if(state.busy){ vLoading(); return; }
+  panel(`<h1 class="title">Log in</h1>
+  <form id="loginForm">
+    <input class="field" id="u" type="email" autocomplete="username" placeholder="Email" aria-label="Email">
+    <input class="field" id="p" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
+    <button class="bigbtn primary" type="button" id="loginBtn">Log in</button>
+  </form>
+  <button class="quiet" data-nav="create">Create an account</button>
+  <button class="quiet" data-nav="forgot">Forgot password</button>
+  ${state.createMsg?`<div class="saved">${esc(state.createMsg)}</div>`:''}
+  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}
+  `);
+}
+function vCreate(){
+  panel(`<h1 class="title">Create account</h1>
+  ${state.savedMsg?'<div class="saved">Account created.</div>':''}
+  <form id="createForm">
+    <input class="field" id="cu" type="email" autocomplete="email" placeholder="Business email" aria-label="Business email">
+    <input class="field" id="cp" type="password" autocomplete="new-password" placeholder="Password" aria-label="Password">
+    <button class="bigbtn primary" type="button" id="createBtn">Create account</button>
+  </form>
+  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, cornersLite('login'));
+}
+function vForgot(){
+  panel(`<h1 class="title">Forgot password</h1>
+  ${state.savedMsg?'<div class="saved">Check your email.</div>':''}
+  <form id="forgotForm">
+    <input class="field" id="fu" type="email" autocomplete="email" placeholder="Email" aria-label="Email">
+    <button class="bigbtn primary" type="button" id="forgotBtn">Send reset link</button>
+  </form>
+  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, cornersLite('login'));
+}
+function vChoose(){
+  const hqs=state.tenants.map(t=>`<button class="bigbtn" data-hq="${esc(t.tenant)}">${esc(tenantMeta(t.tenant).name)}</button>`).join('');
+  panel(`<h1 class="title">Choose your HQ</h1><div class="stack">${hqs}</div>
+  <button class="quiet" id="logoutBtn">Log out</button>`);
+}
+function vHome(){
+  const v=info();
+  const tagName=v.version&&v.version!=='full'?v.version.charAt(0).toUpperCase()+v.version.slice(1):'';
+  const tag=tagName?`<span class="tag">${esc(tagName)}</span>`:'';
+  panel(`<h1 class="title">${esc(v.name)} OpportunityHQ${tag}</h1>
+  <div class="stack">
+    <button class="bigbtn primary" data-nav="opps">Opportunities</button>
+    <button class="bigbtn" data-nav="insights">Insights</button>
+    <button class="bigbtn" data-nav="status">Status</button>
+    <button class="bigbtn" data-nav="help">Help</button>
+    <button class="bigbtn" data-nav="search">Search</button>
+  </div>
+  <button class="quiet" data-nav="choose">Switch HQ</button>`);
+}
+function viewName(v){return {new:'View new opportunities',all:'View all opportunities',strong:'View strongest opportunities',county:'By county'}[v]||'View all opportunities'}
+function oppViewList(view){
+  const ls=leads();
+  if(view==='new') return ls.filter(fresh);
+  if(view==='strong') return [...ls].sort((a,b)=>strength(b)-strength(a));
+  if(view==='county') return ls.filter(l=>l.area===state.county);
+  return ls;
+}
+function vOpps(){
+  const ls=leads();
+  const newCount=ls.filter(fresh).length;
+  const counties=[...new Set(ls.map(l=>l.area))];
+  const usual=state.lastOppView&&state.lastOppView!=='county'
+    ? `<button class="bigbtn primary" data-view="${state.lastOppView}">Your usual: ${esc(viewName(state.lastOppView))}</button>`:'';
+  panel(`<h1 class="title">Opportunities</h1>
+  <div class="stack">
+    ${usual}
+    <button class="bigbtn" data-view="new">View new opportunities ${newCount?`<span class="count">(${newCount})</span>`:''}</button>
+    <button class="bigbtn" data-view="all">View all opportunities</button>
+    <button class="bigbtn" data-view="strong">View strongest opportunities</button>
+    ${counties.map(c=>`<button class="bigbtn" data-county="${esc(c)}">${esc(c)}</button>`).join('')}
+  </div>`, corners('home'));
+}
+function vList(){
+  const ls=oppViewList(state.oppView);
+  const title=state.oppView==='county'?esc(state.county):esc(viewName(state.oppView));
+  const items=ls.length? ls.map(l=>`
+    <button class="row leadbtn" data-lead="${esc(l.id)}">
+      <span class="lt">${esc(l.title)}</span>
+      <span class="lm">${esc(l.area)} · ${typeLabel(l)} · ${esc(statusLabel(l.status))}${l.pendingSync?' · Saving':''}</span>
+    </button>`).join('') : `<div class="empty">Nothing here yet.</div>`;
+  panel(`<h1 class="title">${title}</h1><div class="rows">${items}</div>`, corners('opps'));
+}
+function nextStep(l){
+  if(l.type==='trigger'&&l.status==='new') return ['Research this one','reviewing'];
+  if(l.status==='new') return ['Review this lead','reviewing'];
+  if(l.status==='reviewing') return ['Mark outreach sent','outreach_sent'];
+  if(l.status==='outreach_sent') return ['Mark reply received','engaged'];
+  if(l.status==='engaged') return ['Set follow up','nurture'];
+  return ['Close this one','closed'];
+}
+function vDetail(){
+  const l=leads().find(x=>x.id===state.selected);
+  if(!l){go('opps');return}
+  const [label]=nextStep(l);
+  const statuses=['new','reviewing','outreach_sent','engaged','nurture','closed'].filter(s=>s!==l.status);
+  panel(`<h1 class="title">${esc(l.title)}</h1>
+  <div class="rows">
+    <div class="row"><span>County</span><b>${esc(l.area)}</b></div>
+    <div class="row"><span>Type</span><b>${typeLabel(l)}</b></div>
+    <div class="row"><span>Contact</span><b>${esc(l.route)}</b></div>
+    <div class="row"><span>Status</span><b>${esc(statusLabel(l.status))}${l.pendingSync?' · Saving':''}</b></div>
+  </div>
+  <div class="stack" style="margin-top:16px">
+    <button class="bigbtn primary" id="contactBtn">Contact</button>
+    <button class="bigbtn" id="doNext">${esc(label)}</button>
+    ${statuses.slice(0,3).map(s=>`<button class="bigbtn" data-status="${s}">Mark as ${esc(statusLabel(s).toLowerCase())}</button>`).join('')}
+  </div>`, corners('list'));
+}
+function insightRows(view){
+  const ls=leads();
+  const direct=ls.filter(l=>l.type==='direct').length, trig=ls.length-direct;
+  const newN=ls.filter(fresh).length;
+  const counties={}; ls.forEach(l=>{counties[l.area]=(counties[l.area]||0)+1});
+  if(view==='county') return Object.entries(counties).map(([c,n])=>`<div class="row"><span>${esc(c)}</span><b>${n}</b></div>`).join('')||'<div class="empty">Nothing here yet.</div>';
+  if(view==='direct') return `<div class="row"><span>Direct leads</span><b>${direct}</b></div><div class="row"><span>New direct leads</span><b>${ls.filter(l=>l.type==='direct'&&fresh(l)).length}</b></div>`;
+  if(view==='triggers') return `<div class="row"><span>Project triggers</span><b>${trig}</b></div><div class="row"><span>Being reviewed</span><b>${ls.filter(l=>l.type==='trigger'&&l.status==='reviewing').length}</b></div>`;
+  if(view==='newest') return [...ls].sort((a,b)=>a.age-b.age).map(l=>`<div class="row"><span>${esc(l.title)}<span class="sub">${esc(l.area)}</span></span><b>${l.age<24?l.age+'h':Math.round(l.age/24)+'d'}</b></div>`).join('')||'<div class="empty">Nothing here yet.</div>';
+  return `<div class="row"><span>New opportunities</span><b>${newN}</b></div>
+          <div class="row"><span>Direct leads</span><b>${direct}</b></div>
+          <div class="row"><span>Project triggers</span><b>${trig}</b></div>
+          <div class="row"><span>Being reviewed</span><b>${ls.filter(l=>l.status==='reviewing').length}</b></div>`;
+}
+function vInsights(){
+  const views=[['relevant','Most relevant'],['county','By county'],['direct','Direct leads'],['triggers','Project triggers'],['newest','Newest first']];
+  const cur=state.lastInsightsView||'relevant';
+  panel(`<h1 class="title">Insights</h1>
+  <div class="rows" style="margin-bottom:16px">${insightRows(cur)}</div>
+  <div class="stack">${views.filter(([v])=>v!==cur).map(([v,n])=>`<button class="bigbtn" data-insight="${v}">${n}</button>`).join('')}</div>`, corners('home'));
+}
+function vStatus(){
+  const ls=leads();
+  const newest=ls.map(l=>l.updatedAt).filter(Boolean).sort().at(-1);
+  panel(`<h1 class="title">Status</h1>
+  <div class="rows">
+    <div class="row"><span>Scan</span><b>Active</b></div>
+    <div class="row"><span>Last update</span><b>${newest?esc(new Date(newest).toLocaleDateString(undefined,{month:'short',day:'numeric'})):'No leads yet'}</b></div>
+    <div class="row"><span>Service</span><b>Active</b></div>
+    <div class="row"><span>Opportunities</span><b>${ls.length}</b></div>
+  </div>`, corners('home'));
+}
+function vHelp(){
+  const booking=CONFIG?.helpDeskBookingUrl
+    ? `<a class="bigbtn" href="${esc(CONFIG.helpDeskBookingUrl)}" target="_blank" rel="noopener" style="display:block;text-decoration:none;margin-top:14px">Book a Help Desk call</a>`:'';
+  panel(`<h1 class="title">Help</h1>
+  ${state.savedMsg?`<div class="saved">Saved. We will take it from here.${state.ticketId?`<span class="sub" style="display:block;font-size:14px;color:var(--muted);font-weight:500;margin-top:4px">Ticket ${esc(state.ticketId)}</span>`:''}</div>`:''}
+  <form id="helpForm">
+    <textarea class="field" id="helpText" placeholder="What do you need?" aria-label="What do you need?"></textarea>
+    <button class="bigbtn primary" type="button" id="helpSend">Send</button>
+  </form>
+  ${booking}
+  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, corners('home'));
+}
+function vSearch(){
+  const q=(state.lastSearch||'').toLowerCase();
+  let results='';
+  if(q){
+    const hits=leads().filter(l=>(l.title+' '+l.area+' '+typeLabel(l)).toLowerCase().includes(q));
+    results=hits.length? hits.map(l=>`<button class="row leadbtn" data-lead="${esc(l.id)}"><span class="lt">${esc(l.title)}</span><span class="lm">${esc(l.area)}</span></button>`).join('') : '<div class="empty">No matches.</div>';
+  }
+  panel(`<h1 class="title">Search</h1>
+  <input class="field searchbox" id="searchInput" placeholder="Type to search" value="${esc(state.lastSearch||'')}" aria-label="Search">
+  <div class="rows">${results}</div>`, corners('home'));
+}
+function render(){
+  ({login:vLogin,create:vCreate,forgot:vForgot,choose:vChoose,home:vHome,opps:vOpps,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
+}
+
+async function attemptLogin(){
+  const u=($('u')?.value||'').trim(), p=$('p')?.value||'';
+  if(!u){$('u')?.focus(); return}
+  if(!p){$('p')?.focus(); return}
+  state.loginErr=''; state.createMsg='';
+  try{
+    const r=await idp('/token?grant_type=password',{email:u, password:p});
+    if(!r.access_token) throw new Error('Sign-in failed.');
+    ACCESS_TOKEN=r.access_token;
+    await bootstrap();
+  }catch(e){
+    ACCESS_TOKEN=null;
+    state.loginErr=e.message||'Sign-in failed.';
+    if(state.screen!=='error') render();
+  }
+}
+async function attemptCreate(){
+  const u=($('cu')?.value||'').trim(), p=$('cp')?.value||'';
+  if(!u||!u.includes('@')){$('cu')?.focus(); return}
+  if(!p){$('cp')?.focus(); return}
+  state.loginErr='';
+  try{
+    await idp('/signup',{email:u, password:p});
+    state.createMsg='Check your email to verify your account, then log in.';
+    go('login');
+  }catch(e){
+    state.loginErr=e.message||'Could not create the account.';
+    render();
+  }
+}
+async function attemptForgot(){
+  const u=($('fu')?.value||'').trim();
+  if(!u||!u.includes('@')){$('fu')?.focus(); return}
+  state.loginErr='';
+  try{
+    const cfg=await loadConfig();
+    if(!cfg.supabaseUrl||!cfg.supabaseAnonKey) throw new Error('Password reset is not available yet.');
+    await idp('/recover',{email:u});
+    state.savedMsg=true; render();
+  }catch(e){
+    state.loginErr=e.message||'Could not send the reset link.';
+    render();
+  }
+}
+async function sendHelp(){
+  const text=($('helpText')?.value||'').trim();
+  if(!text){$('helpText')?.focus(); return}
+  state.loginErr='';
+  try{
+    const r=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/tickets',{method:'POST', body:JSON.stringify({tenant:state.tenant, category:'other', description:text})});
+    state.ticketId=r.ticket?.id||null;
+    state.savedMsg=true; render();
+  }catch(e){
+    state.loginErr='We could not save that. Please try again.';
+    render();
+  }
+}
+async function attemptLogout(){
+  try{ if(ACCESS_TOKEN) await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/auth/logout',{method:'POST'}); }catch{}
+  ACCESS_TOKEN=null; DATA=null;
+  state.user=null; state.tenant=null; state.tenants=[]; state.selected=null;
+  state.lastSearch=''; state.ticketId=null; state.loginErr=''; state.createMsg='';
+  closeContact();
+  go('login');
+}
+document.addEventListener('submit',e=>{
+  if(e.target.id==='loginForm'){ e.preventDefault(); attemptLogin(); }
+  if(e.target.id==='createForm'){ e.preventDefault(); attemptCreate(); }
+  if(e.target.id==='forgotForm'){ e.preventDefault(); attemptForgot(); }
+  if(e.target.id==='helpForm'){ e.preventDefault(); sendHelp(); }
+});
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.id==='loginBtn'){attemptLogin(); return}
+  if(b.id==='createBtn'){attemptCreate(); return}
+  if(b.id==='forgotBtn'){attemptForgot(); return}
+  if(b.id==='helpSend'){sendHelp(); return}
+  if(b.id==='retryBtn'){state.fatalErr=''; go('login'); return}
+  if(b.id==='logoutBtn'){attemptLogout(); return}
+  if(b.dataset.back) return go(b.dataset.back);
+  if(b.dataset.hq){state.tenant=b.dataset.hq; return go('home')}
+  if(b.dataset.nav){
+    const map={opps:'opps',insights:'insights',status:'status',help:'help',search:'search',choose:'choose',create:'create',forgot:'forgot'};
+    if(map[b.dataset.nav]==='help'){ state.ticketId=null; state.loginErr=''; loadConfig().catch(()=>{}); }
+    return go(map[b.dataset.nav]||'home');
+  }
+  if(b.dataset.view){state.oppView=b.dataset.view; state.lastOppView=b.dataset.view; return go('list')}
+  if(b.dataset.county){state.oppView='county'; state.county=b.dataset.county; return go('list')}
+  if(b.dataset.lead){state.selected=b.dataset.lead; return go('detail')}
+  if(b.dataset.insight){state.lastInsightsView=b.dataset.insight; return go('insights')}
+  if(b.dataset.status){setStatus(b.dataset.status); return}
+  if(b.id==='contactBtn'){openContact(); return}
+  if(b.id==='popupX'){closeContact(); return}
+  if(b.dataset.contact!==undefined){runContact(Number(b.dataset.contact)); return}
+  if(b.id==='doNext'){
+    const l=leads().find(x=>x.id===state.selected); if(!l) return;
+    const [,target]=nextStep(l); setStatus(target); return;
+  }
+});
+function contactLabel(c){
+  if(c.kind==='email') return 'Email';
+  if(c.kind==='phone') return 'Call';
+  if(c.kind==='link') return c.label||'Link';
+  return c.label||'Open';
+}
+function openContact(){
+  const l=leads().find(x=>x.id===state.selected); if(!l) return;
+  const cs=l.contacts||[];
+  const btns=cs.length? cs.map((c,i)=>`<button class="bigbtn" data-contact="${i}">${esc(contactLabel(c))}</button>`).join('') : '<div class="empty">No contact yet.</div>';
+  $('popupRoot').innerHTML=`<div class="overlay" id="overlay"><div class="popup" role="dialog" aria-label="Contact">
+    <button class="xbtn" id="popupX" aria-label="Close">✕</button>
+    <h2>Contact</h2><div class="stack">${btns}</div><div class="toast" id="toast"></div></div></div>`;
+}
+function closeContact(){ $('popupRoot').innerHTML=''; }
+function runContact(i){
+  const l=leads().find(x=>x.id===state.selected); if(!l) return;
+  const c=(l.contacts||[])[i]; if(!c) return;
+  if(c.kind==='email'){ window.location.href='mailto:'+c.value; return; }
+  if(c.kind==='phone'){
+    try{ navigator.clipboard?.writeText(c.value); }catch{}
+    const t=$('toast'); if(t) t.textContent='Calling · number copied';
+    window.location.href='tel:'+c.value.replace(/[^+0-9]/g,'');
+    return;
+  }
+  window.open(c.url,'_blank','noopener');
+}
+const STATUS_ERRORS={
+  confirmation_required:'Please confirm first.',
+  transition_not_allowed:'That change is not available from the current status.',
+  tenant_writes_disabled:'Updates are paused for this HQ right now.',
+  role_cannot_write:'Your role can view but not update leads.'
+};
+async function setStatus(target){
+  let confirmConversation=false, confirmSent=false;
+  if(target==='engaged'){ if(!confirm('Was there a real two-way conversation?')) return; confirmConversation=true; }
+  if(target==='outreach_sent'){ if(!confirm('Was outreach actually sent outside this app?')) return; confirmSent=true; }
+  try{
+    await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/leads/'+encodeURIComponent(state.selected)+'/status',{
+      method:'POST',
+      headers:{'Idempotency-Key': crypto.randomUUID()},
+      body:JSON.stringify({tenant:state.tenant, status:target, confirmConversation, confirmSent})
+    });
+    // 202 = the command is validated and queued for write-back. It is not
+    // "saved" until the worker verifies it in Notion, so flag it as saving
+    // and let the next refresh show the verified state.
+    const l=leads().find(x=>x.id===state.selected);
+    if(l){ l.status=target; l.pendingSync=true; }
+    go('detail');
+  }catch(e){
+    alert(STATUS_ERRORS[e.code]||'We could not save that change. Please try again.');
+  }
+}
+document.addEventListener('input',e=>{
+  if(e.target.id==='searchInput'){state.lastSearch=e.target.value; render(); const si=$('searchInput'); if(si){si.focus(); si.setSelectionRange(si.value.length,si.value.length)}}
+});
+document.addEventListener('click',e=>{ if(e.target.id==='overlay') closeContact(); });
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&$('popupRoot').innerHTML){closeContact(); return}
+  if(e.key==='Enter'&&['u','p'].includes(document.activeElement?.id)){e.preventDefault(); attemptLogin(); return}
+  if(e.key==='Enter'&&['cu','cp'].includes(document.activeElement?.id)){e.preventDefault(); attemptCreate(); return}
+  if(e.key==='Enter'&&document.activeElement?.id==='fu'){e.preventDefault(); attemptForgot(); return}
+  const inField=['INPUT','TEXTAREA'].includes(document.activeElement?.tagName);
+  if(((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k')||(e.key==='/'&&!inField)){
+    e.preventDefault(); if(state.user) go('search');
+  }
+  if(e.key==='Escape'&&state.tenant) go('home');
+});
+/* Cold load: there is no persisted session to restore (by design), so the
+   only possible starting point is Login. After an in-page sign-in,
+   bootstrap() validates the session via /api/me before showing any HQ. */
+render();
+if('serviceWorker' in navigator&&location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
+})();
+</script>
+</body>
+</html>
