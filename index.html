@@ -103,6 +103,8 @@ button.row:hover{border-color:rgba(31,226,255,.55)}
 .popup h2{margin:0 0 20px; text-align:center; font-size:24px}
 .xbtn{position:absolute; top:12px; right:12px; width:42px; height:42px; border-radius:50%; background:rgba(22,35,58,.9); border:1px solid var(--line); color:var(--ink); font-size:18px}
 .toast{text-align:center; color:var(--cyan); font-size:15px; font-weight:650; margin-top:14px; min-height:20px}
+.concierge-btn{border-color:rgba(215,179,106,.45)}
+.hdlink{display:block; text-decoration:none; margin-bottom:14px}
 @media (max-width:480px){
   body{padding:14px 10px}
   .panel{padding:30px 20px 28px; border-radius:24px}
@@ -231,9 +233,14 @@ function corners(backTarget){
        + `<button class="helpbtn" data-nav="help" aria-label="Help">?</button>`;
 }
 function cornersLite(backTarget){ return `<button class="backbtn" data-back="${backTarget}" aria-label="Back">←</button>`; }
-function panel(html,cornersHtml){
+function panel(html,cornersHtml,concierge){
   $('panel').className='panel enter'+(cornersHtml?' with-corners':'');
-  $('panel').innerHTML=html+(cornersHtml||'');
+  // Signed-in views only (login/create/forgot/loading/error never pass
+  // this): the shared Concierge entry, inside the floating panel like
+  // everything else. The glyph is the person-in-tuxedo emoji, whose
+  // rendering is a bow tie; there is no standalone bow-tie emoji.
+  const conciergeHtml=concierge?`<div class="stack" style="margin-top:14px"><button class="bigbtn concierge-btn" id="conciergeBtn">🤵 Concierge</button></div>`:'';
+  $('panel').innerHTML=html+conciergeHtml+(cornersHtml||'');
 }
 
 function vLoading(){
@@ -280,7 +287,7 @@ function vForgot(){
 function vChoose(){
   const hqs=state.tenants.map(t=>`<button class="bigbtn" data-hq="${esc(t.tenant)}">${esc(tenantMeta(t.tenant).name)}</button>`).join('');
   panel(`<h1 class="title">Choose your HQ</h1><div class="stack">${hqs}</div>
-  <button class="quiet" id="logoutBtn">Log out</button>`);
+  <button class="quiet" id="logoutBtn">Log out</button>`, null, true);
 }
 function vHome(){
   const v=info();
@@ -294,7 +301,7 @@ function vHome(){
     <button class="bigbtn" data-nav="help">Help</button>
     <button class="bigbtn" data-nav="search">Search</button>
   </div>
-  <button class="quiet" data-nav="choose">Switch HQ</button>`);
+  <button class="quiet" data-nav="choose">Switch HQ</button>`, null, true);
 }
 function viewName(v){return {new:'View new opportunities',all:'View all opportunities',strong:'View strongest opportunities',county:'By county'}[v]||'View all opportunities'}
 function oppViewList(view){
@@ -317,7 +324,7 @@ function vOpps(){
     <button class="bigbtn" data-view="all">View all opportunities</button>
     <button class="bigbtn" data-view="strong">View strongest opportunities</button>
     ${counties.map(c=>`<button class="bigbtn" data-county="${esc(c)}">${esc(c)}</button>`).join('')}
-  </div>`, corners('home'));
+  </div>`, corners('home'), true);
 }
 function vList(){
   const ls=oppViewList(state.oppView);
@@ -327,7 +334,7 @@ function vList(){
       <span class="lt">${esc(l.title)}</span>
       <span class="lm">${esc(l.area)} · ${typeLabel(l)} · ${esc(statusLabel(l.status))}${l.pendingSync?' · Saving':''}</span>
     </button>`).join('') : `<div class="empty">Nothing here yet.</div>`;
-  panel(`<h1 class="title">${title}</h1><div class="rows">${items}</div>`, corners('opps'));
+  panel(`<h1 class="title">${title}</h1><div class="rows">${items}</div>`, corners('opps'), true);
 }
 function nextStep(l){
   if(l.type==='trigger'&&l.status==='new') return ['Research this one','reviewing'];
@@ -353,7 +360,7 @@ function vDetail(){
     <button class="bigbtn primary" id="contactBtn">Contact</button>
     <button class="bigbtn" id="doNext">${esc(label)}</button>
     ${statuses.slice(0,3).map(s=>`<button class="bigbtn" data-status="${s}">Mark as ${esc(statusLabel(s).toLowerCase())}</button>`).join('')}
-  </div>`, corners('list'));
+  </div>`, corners('list'), true);
 }
 function insightRows(view){
   const ls=leads();
@@ -374,7 +381,7 @@ function vInsights(){
   const cur=state.lastInsightsView||'relevant';
   panel(`<h1 class="title">Insights</h1>
   <div class="rows" style="margin-bottom:16px">${insightRows(cur)}</div>
-  <div class="stack">${views.filter(([v])=>v!==cur).map(([v,n])=>`<button class="bigbtn" data-insight="${v}">${n}</button>`).join('')}</div>`, corners('home'));
+  <div class="stack">${views.filter(([v])=>v!==cur).map(([v,n])=>`<button class="bigbtn" data-insight="${v}">${n}</button>`).join('')}</div>`, corners('home'), true);
 }
 function vStatus(){
   const ls=leads();
@@ -385,7 +392,7 @@ function vStatus(){
     <div class="row"><span>Last update</span><b>${newest?esc(new Date(newest).toLocaleDateString(undefined,{month:'short',day:'numeric'})):'No leads yet'}</b></div>
     <div class="row"><span>Service</span><b>Active</b></div>
     <div class="row"><span>Opportunities</span><b>${ls.length}</b></div>
-  </div>`, corners('home'));
+  </div>`, corners('home'), true);
 }
 function vHelp(){
   const booking=CONFIG?.helpDeskBookingUrl
@@ -397,7 +404,7 @@ function vHelp(){
     <button class="bigbtn primary" type="button" id="helpSend">Send</button>
   </form>
   ${booking}
-  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, corners('home'));
+  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, corners('home'), true);
 }
 function vSearch(){
   const q=(state.lastSearch||'').toLowerCase();
@@ -408,7 +415,7 @@ function vSearch(){
   }
   panel(`<h1 class="title">Search</h1>
   <input class="field searchbox" id="searchInput" placeholder="Type to search" value="${esc(state.lastSearch||'')}" aria-label="Search">
-  <div class="rows">${results}</div>`, corners('home'));
+  <div class="rows">${results}</div>`, corners('home'), true);
 }
 function render(){
   ({login:vLogin,create:vCreate,forgot:vForgot,choose:vChoose,home:vHome,opps:vOpps,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
@@ -458,17 +465,89 @@ async function attemptForgot(){
     render();
   }
 }
+/* The ONE ticket submit path. The Help view and the Concierge popup
+   both call this, so endpoint, payload, tenant scoping, and ticket-id
+   handling can never diverge between them. Throws on API failure; the
+   callers own their surface's error display. */
+async function submitTicket(description){
+  const r=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/tickets',{method:'POST', body:JSON.stringify({tenant:state.tenant, category:'other', description})});
+  state.ticketId=r.ticket?.id||null;
+  return r;
+}
 async function sendHelp(){
   const text=($('helpText')?.value||'').trim();
   if(!text){$('helpText')?.focus(); return}
   state.loginErr='';
   try{
-    const r=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/tickets',{method:'POST', body:JSON.stringify({tenant:state.tenant, category:'other', description:text})});
-    state.ticketId=r.ticket?.id||null;
+    await submitTicket(text);
     state.savedMsg=true; render();
   }catch(e){
     state.loginErr='We could not save that. Please try again.';
     render();
+  }
+}
+/* Concierge popup: the same ticket intake as the Help view, presented
+   as a chat box. There is deliberately no live-chat backend: the
+   operating concierge is draft-first and human-backed, so a sent
+   message is a ticket the team picks up, exactly like Help. */
+async function sendConcierge(){
+  const field=$('conciergeText');
+  const text=(field?.value||'').trim();
+  if(!text){field?.focus(); return}
+  const msg=$('conciergeMsg');
+  try{
+    await submitTicket(text);
+    if(field) field.value='';
+    if(msg) msg.innerHTML=`<div class="saved">Saved. We will take it from here.${state.ticketId?`<span class="sub" style="display:block;font-size:14px;color:var(--muted);font-weight:500;margin-top:4px">Ticket ${esc(state.ticketId)}</span>`:''}</div>`;
+    loadPastRequests();
+  }catch(e){
+    if(msg) msg.innerHTML=`<p class="demo" style="color:#ff9d9d">We could not save that. Please try again.</p>`;
+  }
+}
+async function openConcierge(){
+  // The header button needs the same /api/config value the Help view
+  // uses; load it if this session has not yet. A null booking URL
+  // hides the button entirely: fail closed, never a dead link.
+  try{ await loadConfig(); }catch{}
+  const booking=CONFIG?.helpDeskBookingUrl;
+  const visit=booking?`<a class="bigbtn hdlink" href="${esc(booking)}" target="_blank" rel="noopener">Visit Help Desk</a>`:'';
+  $('popupRoot').innerHTML=`<div class="overlay" id="overlay"><div class="popup" role="dialog" aria-label="Concierge">
+    <button class="xbtn" id="popupX" aria-label="Close">✕</button>
+    <h2>🤵 Concierge</h2>
+    ${visit}
+    <form id="conciergeForm">
+      <textarea class="field" id="conciergeText" placeholder="What do you need?" aria-label="What do you need?"></textarea>
+      <button class="bigbtn primary" type="button" id="conciergeSend">Send</button>
+    </form>
+    <div id="conciergeMsg"></div>
+    <div id="conciergePast"></div></div></div>`;
+  $('conciergeText')?.focus();
+  if(state.tenant) loadPastRequests();
+}
+/* Past requests: the client's OWN tickets for the current HQ, newest
+   first, via the existing GET /api/tickets read path. The API scopes
+   it to the signed-in submitter and checks HQ membership (403 for any
+   other HQ), so this list can never show another client's requests.
+   Without a chosen HQ there is nothing to scope to, so the section
+   stays empty. A load failure degrades to a quiet note, never an
+   error that blocks the popup. */
+const ticketStatusLabel=s=>({pending:'Pending',assigned:'Assigned',in_progress:'In progress',resolved:'Resolved'})[s]||s;
+async function loadPastRequests(){
+  const box=$('conciergePast'); if(!box||!state.tenant) return;
+  box.innerHTML=`<div class="empty" style="padding:14px 6px">Loading past requests.</div>`;
+  try{
+    const r=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/tickets?tenant='+encodeURIComponent(state.tenant));
+    if(!$('conciergePast')) return;
+    const ts=r.tickets||[];
+    const items=ts.map(t=>{
+      const d=String(t.description||'');
+      const summary=d.length>120?d.slice(0,120)+'…':d;
+      const when=t.createdAt?new Date(t.createdAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}):'';
+      return `<div class="row"><span>${esc(summary)}${when?`<span class="sub">${esc(when)}</span>`:''}</span><b>${esc(ticketStatusLabel(t.status))}</b></div>`;
+    }).join('');
+    box.innerHTML=`<h2 style="font-size:20px;margin-top:22px">Past requests</h2>`+(ts.length?`<div class="rows">${items}</div>`:`<div class="empty">No past requests yet.</div>`);
+  }catch(e){
+    if($('conciergePast')) box.innerHTML=`<div class="empty" style="padding:14px 6px">Past requests are not available right now.</div>`;
   }
 }
 async function attemptLogout(){
@@ -484,6 +563,7 @@ document.addEventListener('submit',e=>{
   if(e.target.id==='createForm'){ e.preventDefault(); attemptCreate(); }
   if(e.target.id==='forgotForm'){ e.preventDefault(); attemptForgot(); }
   if(e.target.id==='helpForm'){ e.preventDefault(); sendHelp(); }
+  if(e.target.id==='conciergeForm'){ e.preventDefault(); sendConcierge(); }
 });
 document.addEventListener('click',e=>{
   const b=e.target.closest('button'); if(!b) return;
@@ -491,6 +571,8 @@ document.addEventListener('click',e=>{
   if(b.id==='createBtn'){attemptCreate(); return}
   if(b.id==='forgotBtn'){attemptForgot(); return}
   if(b.id==='helpSend'){sendHelp(); return}
+  if(b.id==='conciergeBtn'){openConcierge(); return}
+  if(b.id==='conciergeSend'){sendConcierge(); return}
   if(b.id==='retryBtn'){state.fatalErr=''; go('login'); return}
   if(b.id==='logoutBtn'){attemptLogout(); return}
   if(b.dataset.back) return go(b.dataset.back);
@@ -506,7 +588,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.insight){state.lastInsightsView=b.dataset.insight; return go('insights')}
   if(b.dataset.status){setStatus(b.dataset.status); return}
   if(b.id==='contactBtn'){openContact(); return}
-  if(b.id==='popupX'){closeContact(); return}
+  if(b.id==='popupX'){closePopup(); return}
   if(b.dataset.contact!==undefined){runContact(Number(b.dataset.contact)); return}
   if(b.id==='doNext'){
     const l=leads().find(x=>x.id===state.selected); if(!l) return;
@@ -527,7 +609,8 @@ function openContact(){
     <button class="xbtn" id="popupX" aria-label="Close">✕</button>
     <h2>Contact</h2><div class="stack">${btns}</div><div class="toast" id="toast"></div></div></div>`;
 }
-function closeContact(){ $('popupRoot').innerHTML=''; }
+function closePopup(){ $('popupRoot').innerHTML=''; }
+function closeContact(){ closePopup(); }
 function runContact(i){
   const l=leads().find(x=>x.id===state.selected); if(!l) return;
   const c=(l.contacts||[])[i]; if(!c) return;
@@ -569,9 +652,9 @@ async function setStatus(target){
 document.addEventListener('input',e=>{
   if(e.target.id==='searchInput'){state.lastSearch=e.target.value; render(); const si=$('searchInput'); if(si){si.focus(); si.setSelectionRange(si.value.length,si.value.length)}}
 });
-document.addEventListener('click',e=>{ if(e.target.id==='overlay') closeContact(); });
+document.addEventListener('click',e=>{ if(e.target.id==='overlay') closePopup(); });
 document.addEventListener('keydown',e=>{
-  if(e.key==='Escape'&&$('popupRoot').innerHTML){closeContact(); return}
+  if(e.key==='Escape'&&$('popupRoot').innerHTML){closePopup(); return}
   if(e.key==='Enter'&&['u','p'].includes(document.activeElement?.id)){e.preventDefault(); attemptLogin(); return}
   if(e.key==='Enter'&&['cu','cp'].includes(document.activeElement?.id)){e.preventDefault(); attemptCreate(); return}
   if(e.key==='Enter'&&document.activeElement?.id==='fu'){e.preventDefault(); attemptForgot(); return}
