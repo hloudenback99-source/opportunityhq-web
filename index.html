@@ -64,6 +64,14 @@ h1.title .tag{
 .bigbtn.primary{background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a; border-color:transparent; font-weight:780}
 .bigbtn .count{color:var(--cyan); font-weight:800}
 .bigbtn.primary .count{color:#04121a}
+.hqbtn{display:flex; flex-direction:column; align-items:center; gap:6px}
+.hqbtn .hqname{font-size:20px; font-weight:750; line-height:1.2}
+.hqbtn .hqmeta{display:flex; align-items:center; gap:10px}
+.hqbtn .hqstatus{font-size:14px; color:var(--muted); font-weight:550}
+.badge{
+  display:inline-block; padding:3px 11px; border-radius:999px;
+  background:var(--cyan); color:#04121a; font-size:13px; font-weight:800; letter-spacing:.3px;
+}
 .field{
   width:100%; min-height:60px; padding:15px 18px; margin:0 0 14px;
   background:#0c1626; border:1px solid var(--line); border-radius:18px; color:var(--ink); font-size:18px;
@@ -202,6 +210,9 @@ async function loadTenantData(slug){
 async function bootstrap(){
   // Session bootstrap: /api/me is the only source of who this is and
   // which HQs they may see. No token in memory = no session = Login.
+  // Tenant DATA loads only after an HQ is picked: with several HQs the
+  // Choose screen comes first, so no client's leads are fetched before
+  // its HQ is selected (and never for an HQ that is not entered).
   if(!ACCESS_TOKEN){ go('login'); return; }
   state.busy=true; render();
   try{
@@ -209,16 +220,40 @@ async function bootstrap(){
     state.user=me.email;
     state.tenants=me.tenants||[];
     DATA={};
-    for(const t of state.tenants) await loadTenantData(t.tenant);
     state.busy=false;
     if(!state.tenants.length){ state.loginErr='Your account is ready. HaydenWorks still needs to attach your HQ.'; go('login'); return; }
-    if(state.tenants.length===1){ state.tenant=state.tenants[0].tenant; go('home'); } else go('choose');
+    if(state.tenants.length===1){ await selectTenant(state.tenants[0].tenant); return; }
+    go('choose');
   }catch(e){
     state.busy=false;
     ACCESS_TOKEN=null; DATA=null; state.tenants=[]; state.tenant=null;
     state.fatalErr='We could not load your HQ. Check your connection and try again.';
     go('error');
   }
+}
+/* Pick an HQ: only now does that tenant's data load, then Home. */
+async function selectTenant(slug){
+  state.tenant=slug;
+  go('loading');
+  try{
+    await loadTenantData(slug);
+    go('home');
+  }catch(e){
+    state.tenant=null;
+    state.fatalErr='We could not load your HQ. Check your connection and try again.';
+    go('error');
+  }
+}
+/* Switch HQ: fresh /api/me first, so names, statuses, and new-lead
+   counts on the Choose screen are current, then show the picker. A
+   failed refresh keeps the last known list rather than stranding the
+   user on an error screen. */
+async function showChoose(){
+  try{
+    const me=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/me');
+    state.tenants=me.tenants||[];
+  }catch(e){ /* keep the existing list */ }
+  go('choose');
 }
 const info=()=>DATA[state.tenant];
 const leads=()=> (DATA[state.tenant].leads||[]);
@@ -284,8 +319,24 @@ function vForgot(){
   </form>
   ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, cornersLite('login'));
 }
+/* HQ entitlement status for the picker: 'active' reads "Active"; any
+   other value is shown title-cased as stored. Absent status (API not
+   wired for summaries) renders no status line at all. */
+function statusText(s){
+  if(!s) return '';
+  if(s==='active') return 'Active';
+  return String(s).replace(/[_-]+/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+}
 function vChoose(){
-  const hqs=state.tenants.map(t=>`<button class="bigbtn" data-hq="${esc(t.tenant)}">${esc(tenantMeta(t.tenant).name)}</button>`).join('');
+  const hqs=state.tenants.map(t=>{
+    const name=t.name||tenantMeta(t.tenant).name;
+    const st=statusText(t.status);
+    // The badge exists only for a real count above zero: no badge at
+    // zero, and none when the API did not send a count at all.
+    const badge=(typeof t.newLeads==='number'&&t.newLeads>0)?`<span class="badge">${t.newLeads} new</span>`:'';
+    const meta=(st||badge)?`<span class="hqmeta">${st?`<span class="hqstatus">${esc(st)}</span>`:''}${badge}</span>`:'';
+    return `<button class="bigbtn hqbtn" data-hq="${esc(t.tenant)}"><span class="hqname">${esc(name)}</span>${meta}</button>`;
+  }).join('');
   panel(`<h1 class="title">Choose your HQ</h1><div class="stack">${hqs}</div>
   <button class="quiet" id="logoutBtn">Log out</button>`, null, true);
 }
@@ -576,9 +627,10 @@ document.addEventListener('click',e=>{
   if(b.id==='retryBtn'){state.fatalErr=''; go('login'); return}
   if(b.id==='logoutBtn'){attemptLogout(); return}
   if(b.dataset.back) return go(b.dataset.back);
-  if(b.dataset.hq){state.tenant=b.dataset.hq; return go('home')}
+  if(b.dataset.hq){selectTenant(b.dataset.hq); return}
   if(b.dataset.nav){
-    const map={opps:'opps',insights:'insights',status:'status',help:'help',search:'search',choose:'choose',create:'create',forgot:'forgot'};
+    if(b.dataset.nav==='choose'){ showChoose(); return }
+    const map={opps:'opps',insights:'insights',status:'status',help:'help',search:'search',create:'create',forgot:'forgot'};
     if(map[b.dataset.nav]==='help'){ state.ticketId=null; state.loginErr=''; loadConfig().catch(()=>{}); }
     return go(map[b.dataset.nav]||'home');
   }
