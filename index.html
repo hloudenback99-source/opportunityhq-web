@@ -179,9 +179,13 @@ async function idp(path, body){
   if(!cfg.supabaseUrl||!cfg.supabaseAnonKey) throw new Error('Sign-in is not available yet.');
   const r=await fetch(cfg.supabaseUrl+'/auth/v1'+path,{method:'POST', headers:{'Content-Type':'application/json', apikey:cfg.supabaseAnonKey}, body:JSON.stringify(body)});
   let j={}; try{ j=await r.json(); }catch{}
-  if(!r.ok) throw new Error(j.error_description||j.msg||j.error||'Sign-in failed.');
+  if(!r.ok) throw Object.assign(new Error(j.error_description||j.msg||j.error||'Sign-in failed.'), {status:r.status});
   return j;
 }
+/* Email links (reset, invite, signup confirmation) must land back on
+   this exact page: without redirect_to, Supabase falls back to the
+   Auth Site URL and the link dead-ends away from the app. */
+const emailLinkTarget=()=>window.location.origin+window.location.pathname;
 function toLead(row){
   const contacts=Array.isArray(row.contacts)?row.contacts:[];
   const posted=row.source_posted_at||row.source_updated_at||row.created_at;
@@ -318,6 +322,18 @@ function vForgot(){
     <button class="bigbtn primary" type="button" id="forgotBtn">Send reset link</button>
   </form>
   ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, cornersLite('login'));
+}
+/* Landing screen for recovery and invite email links: the link's
+   session is already adopted, so setting the password is the only
+   step left before bootstrap. No back corner: there is no signed-in
+   state to go back to yet. */
+function vSetPassword(){
+  panel(`<h1 class="title">Set a new password</h1>
+  <form id="setPasswordForm">
+    <input class="field" id="np" type="password" autocomplete="new-password" placeholder="New password" aria-label="New password">
+    <button class="bigbtn primary" type="button" id="setPasswordBtn">Set password</button>
+  </form>
+  ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`);
 }
 /* HQ entitlement status for the picker: 'active' reads "Active"; any
    other value is shown title-cased as stored. Absent status (API not
@@ -469,7 +485,7 @@ function vSearch(){
   <div class="rows">${results}</div>`, corners('home'), true);
 }
 function render(){
-  ({login:vLogin,create:vCreate,forgot:vForgot,choose:vChoose,home:vHome,opps:vOpps,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
+  ({login:vLogin,create:vCreate,forgot:vForgot,setpassword:vSetPassword,choose:vChoose,home:vHome,opps:vOpps,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
 }
 
 async function attemptLogin(){
@@ -494,11 +510,18 @@ async function attemptCreate(){
   if(!p){$('cp')?.focus(); return}
   state.loginErr='';
   try{
-    await idp('/signup',{email:u, password:p});
+    const target=emailLinkTarget();
+    await idp('/signup?redirect_to='+encodeURIComponent(target),{email:u, password:p, redirect_to:target});
     state.createMsg='Check your email to verify your account, then log in.';
     go('login');
   }catch(e){
-    state.loginErr=e.message||'Could not create the account.';
+    // A duplicate signup means the account already exists: point at
+    // the route that can actually finish, setting a password through
+    // Forgot password.
+    const msg=e.message||'';
+    state.loginErr=(e.status===422||/already[^.]*?(registered|exists)/i.test(msg))
+      ? 'That email already has an account. Use Forgot password to set your password.'
+      : (msg||'Could not create the account.');
     render();
   }
 }
@@ -509,10 +532,31 @@ async function attemptForgot(){
   try{
     const cfg=await loadConfig();
     if(!cfg.supabaseUrl||!cfg.supabaseAnonKey) throw new Error('Password reset is not available yet.');
-    await idp('/recover',{email:u});
+    const target=emailLinkTarget();
+    await idp('/recover?redirect_to='+encodeURIComponent(target),{email:u, redirect_to:target});
     state.savedMsg=true; render();
   }catch(e){
     state.loginErr=e.message||'Could not send the reset link.';
+    render();
+  }
+}
+/* Set the password for an adopted email-link session (recovery or
+   invite). The access token IS the session: PUT /auth/v1/user with it
+   as the bearer updates the account password, and bootstrap() then
+   runs on the already-valid session. */
+async function attemptSetPassword(){
+  const p=$('np')?.value||'';
+  if(!p){$('np')?.focus(); return}
+  state.loginErr='';
+  try{
+    const cfg=await loadConfig();
+    if(!cfg.supabaseUrl||!cfg.supabaseAnonKey||!ACCESS_TOKEN) throw new Error('Password setup is not available yet.');
+    const r=await fetch(cfg.supabaseUrl+'/auth/v1/user',{method:'PUT', headers:{'Content-Type':'application/json', apikey:cfg.supabaseAnonKey, Authorization:'Bearer '+ACCESS_TOKEN}, body:JSON.stringify({password:p})});
+    let j={}; try{ j=await r.json(); }catch{}
+    if(!r.ok) throw new Error(j.error_description||j.msg||j.error||'Could not set the password.');
+    await bootstrap();
+  }catch(e){
+    state.loginErr=e.message||'Could not set the password.';
     render();
   }
 }
@@ -613,6 +657,7 @@ document.addEventListener('submit',e=>{
   if(e.target.id==='loginForm'){ e.preventDefault(); attemptLogin(); }
   if(e.target.id==='createForm'){ e.preventDefault(); attemptCreate(); }
   if(e.target.id==='forgotForm'){ e.preventDefault(); attemptForgot(); }
+  if(e.target.id==='setPasswordForm'){ e.preventDefault(); attemptSetPassword(); }
   if(e.target.id==='helpForm'){ e.preventDefault(); sendHelp(); }
   if(e.target.id==='conciergeForm'){ e.preventDefault(); sendConcierge(); }
 });
@@ -621,6 +666,7 @@ document.addEventListener('click',e=>{
   if(b.id==='loginBtn'){attemptLogin(); return}
   if(b.id==='createBtn'){attemptCreate(); return}
   if(b.id==='forgotBtn'){attemptForgot(); return}
+  if(b.id==='setPasswordBtn'){attemptSetPassword(); return}
   if(b.id==='helpSend'){sendHelp(); return}
   if(b.id==='conciergeBtn'){openConcierge(); return}
   if(b.id==='conciergeSend'){sendConcierge(); return}
@@ -710,16 +756,45 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&['u','p'].includes(document.activeElement?.id)){e.preventDefault(); attemptLogin(); return}
   if(e.key==='Enter'&&['cu','cp'].includes(document.activeElement?.id)){e.preventDefault(); attemptCreate(); return}
   if(e.key==='Enter'&&document.activeElement?.id==='fu'){e.preventDefault(); attemptForgot(); return}
+  if(e.key==='Enter'&&document.activeElement?.id==='np'){e.preventDefault(); attemptSetPassword(); return}
   const inField=['INPUT','TEXTAREA'].includes(document.activeElement?.tagName);
   if(((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k')||(e.key==='/'&&!inField)){
     e.preventDefault(); if(state.user) go('search');
   }
   if(e.key==='Escape'&&state.tenant) go('home');
 });
-/* Cold load: there is no persisted session to restore (by design), so the
-   only possible starting point is Login. After an in-page sign-in,
-   bootstrap() validates the session via /api/me before showing any HQ. */
-render();
+/* Email-link landing: Supabase returns from recover, invite, signup,
+   and magic-link emails with the session in the URL hash. Adopt it
+   here, once, then scrub the hash so the one-time token never lingers
+   in the address bar. A recovery or invite token must set a password
+   first; every other token type already has one, so it bootstraps
+   straight in. An error hash (an expired or already-used link) lands
+   on Login with a plain explanation. Returns true when it took over
+   the first render. */
+function adoptEmailLink(){
+  const raw=(window.location.hash||'').replace(/^#/,'');
+  if(!raw) return false;
+  const params=new URLSearchParams(raw);
+  const accessToken=params.get('access_token');
+  const type=params.get('type');
+  const failed=params.get('error')||params.get('error_description');
+  try{ history.replaceState(null,'',window.location.pathname+window.location.search); }catch{}
+  if(failed){
+    state.loginErr='That link has expired. Please request a new one.';
+    return false;
+  }
+  if(!accessToken) return false;
+  ACCESS_TOKEN=accessToken;
+  if(type==='recovery'||type==='invite'){ go('setpassword'); return true; }
+  bootstrap();
+  return true;
+}
+/* Cold load: there is no persisted session to restore (by design). An
+   email link is the one exception: adoptEmailLink() consumes the hash
+   session first; without one, the only starting point is Login. After
+   an in-page sign-in, bootstrap() validates the session via /api/me
+   before showing any HQ. */
+if(!adoptEmailLink()) render();
 if('serviceWorker' in navigator&&location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
 </script>
