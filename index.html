@@ -112,6 +112,27 @@ button.row:hover{border-color:rgba(31,226,255,.55)}
 .xbtn{position:absolute; top:12px; right:12px; width:42px; height:42px; border-radius:50%; background:rgba(22,35,58,.9); border:1px solid var(--line); color:var(--ink); font-size:18px}
 .toast{text-align:center; color:var(--cyan); font-size:15px; font-weight:650; margin-top:14px; min-height:20px}
 .concierge-btn{border-color:rgba(215,179,106,.45)}
+.badge.hot{background:var(--gold)}
+.chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
+.chip{
+  padding:10px 16px; border-radius:999px; background:rgba(22,35,58,.55);
+  border:1px solid var(--line); color:var(--ink); font-size:15px; font-weight:600;
+}
+.chip.on{border-color:var(--cyan); color:var(--cyan); font-weight:750}
+select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
+.feedpos{text-align:center; color:var(--muted); font-size:15px; font-weight:650; margin-bottom:12px}
+.feedcard{
+  background:rgba(22,35,58,.55); border:1px solid var(--line); border-radius:22px;
+  padding:26px 22px; touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none;
+}
+.feedcard:active{cursor:grabbing}
+.feedchips{display:flex; gap:8px; margin-bottom:14px}
+.feedtitle{font-size:24px; font-weight:760; line-height:1.2}
+.feedmeta{font-size:16px; color:var(--muted); margin-top:8px}
+.feedamount{font-size:20px; font-weight:750; color:var(--gold); margin-top:10px}
+.feedintent{font-size:16px; margin:16px 0 0; white-space:pre-wrap}
+.feedhint{text-align:center; color:var(--cyan); font-size:15px; font-weight:650; margin-top:16px}
+.feedzone{position:fixed; z-index:1; cursor:pointer}
 .hdlink{display:block; text-decoration:none; margin-bottom:14px}
 @media (max-width:480px){
   body{padding:14px 10px}
@@ -152,6 +173,9 @@ const state={
   lastInsightsView:null,
   lastSearch:'',
   county:null, oppView:null, selected:null, savedMsg:false,
+  feedMode:'all', feedType:'all', feedArea:'all', feedIndex:0,
+  feedExpanded:false, feedBusy:false, feedErr:'', feedHint:false,
+  feedHintSeen:false, feedSwipeAt:0,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
 };
 const $=id=>document.getElementById(id);
@@ -200,6 +224,7 @@ function toLead(row){
     intent: row.summary||'',
     route, tier: row.contact_tier||'D',
     status: row.operator_status||'new',
+    amount: row.amount||null,
     age, contacts,
     updatedAt: row.source_updated_at||null,
     pendingSync: false
@@ -265,6 +290,17 @@ const fresh=l=>l.status==='new'&&l.age<12;
 const strength=l=>({A:4,B:3,C:2,D:1}[l.tier]||0)*10+(l.type==='direct'?5:0)-Math.min(l.age/24,5);
 const typeLabel=l=>l.type==='direct'?'Direct lead':'Project trigger';
 const statusLabel=s=>({new:'New',reviewing:'Reviewing',contact_planned:'Contact planned',interested:'Interested',outreach_attempted:'Outreach attempted',outreach_sent:'Outreach sent',engaged:'Engaged',qualified:'Qualified',application_started:'Application started',submitted_to_provider:'Submitted to provider',funded:'Funded',funded_elsewhere:'Funded elsewhere',nurture:'Follow up',passed:'Passed',disqualified:'Disqualified',closed_lost:'Closed lost',closed:'Closed',expired:'Expired'})[s]||s;
+const ageLabel=l=>l.age<1?'Just now':l.age<24?l.age+'h ago':Math.round(l.age/24)+'d ago';
+const postedLabel=l=>l.age<24?ageLabel(l):new Date(Date.now()-l.age*3600000).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+/* Amounts are shown only when a lead actually carries one (the API
+   supplies none today, so this renders nothing until it does). */
+const amountText=a=>(a===null||a===undefined||a==='')?'':(typeof a==='number'&&Number.isFinite(a)?'$'+a.toLocaleString('en-US'):String(a));
+/* The two Opportunities list sets (Hayden, 2026-11-23). Approved is
+   every lead the operator has taken on and not closed out; Archives
+   is every lead that has left the working pipeline. Together with
+   'new' (the feed) they partition all 18 canonical statuses. */
+const APPROVED_STATUSES=Object.freeze(['reviewing','contact_planned','interested','outreach_attempted','outreach_sent','engaged','qualified','application_started','submitted_to_provider','nurture','funded']);
+const ARCHIVE_STATUSES=Object.freeze(['passed','disqualified','closed_lost','closed','expired','funded_elsewhere']);
 
 function go(screen){state.screen=screen;state.savedMsg=false;render()}
 function corners(backTarget){
@@ -370,38 +406,221 @@ function vHome(){
   </div>
   <button class="quiet" data-nav="choose">Switch HQ</button>`, null, true);
 }
-function viewName(v){return {new:'View new opportunities',all:'View all opportunities',strong:'View strongest opportunities',county:'By county'}[v]||'View all opportunities'}
+function viewName(v){return {new:'View new opportunities',all:'View all opportunities',strong:'View strongest opportunities',county:'By county',approved:'Approved Opportunities',archives:'Archives'}[v]||'View all opportunities'}
 function oppViewList(view){
   const ls=leads();
   if(view==='new') return ls.filter(fresh);
   if(view==='strong') return [...ls].sort((a,b)=>strength(b)-strength(a));
   if(view==='county') return ls.filter(l=>l.area===state.county);
+  if(view==='approved') return ls.filter(l=>APPROVED_STATUSES.includes(l.status));
+  if(view==='archives') return ls.filter(l=>ARCHIVE_STATUSES.includes(l.status));
   return ls;
 }
+/* Opportunities menu (Hayden, 2026-11-23): exactly five buttons.
+   All and Hot open the swipe feed over the undecided queue; Approved
+   and Archives open comprehensive lists; Back returns Home. */
 function vOpps(){
   const ls=leads();
-  const newCount=ls.filter(fresh).length;
-  const counties=[...new Set(ls.map(l=>l.area))];
-  const usual=state.lastOppView&&state.lastOppView!=='county'
-    ? `<button class="bigbtn primary" data-view="${state.lastOppView}">Your usual: ${esc(viewName(state.lastOppView))}</button>`:'';
+  const allCount=ls.filter(l=>l.status==='new').length;
+  const hotCount=ls.filter(fresh).length;
+  const approvedCount=ls.filter(l=>APPROVED_STATUSES.includes(l.status)).length;
+  const archiveCount=ls.filter(l=>ARCHIVE_STATUSES.includes(l.status)).length;
   panel(`<h1 class="title">Opportunities</h1>
   <div class="stack">
-    ${usual}
-    <button class="bigbtn" data-view="new">View new opportunities ${newCount?`<span class="count">(${newCount})</span>`:''}</button>
-    <button class="bigbtn" data-view="all">View all opportunities</button>
-    <button class="bigbtn" data-view="strong">View strongest opportunities</button>
-    ${counties.map(c=>`<button class="bigbtn" data-county="${esc(c)}">${esc(c)}</button>`).join('')}
+    <button class="bigbtn primary" data-feed="all">All Opportunities ${allCount?`<span class="count">(${allCount})</span>`:''}</button>
+    <button class="bigbtn" data-feed="hot">Hot Opportunities ${hotCount?`<span class="count">(${hotCount})</span>`:''}</button>
+    <button class="bigbtn" data-list="approved">Approved Opportunities ${approvedCount?`<span class="count">(${approvedCount})</span>`:''}</button>
+    <button class="bigbtn" data-list="archives">Archives ${archiveCount?`<span class="count">(${archiveCount})</span>`:''}</button>
+    <button class="bigbtn" data-back="home">Back</button>
   </div>`, corners('home'), true);
 }
 function vList(){
   const ls=oppViewList(state.oppView);
   const title=state.oppView==='county'?esc(state.county):esc(viewName(state.oppView));
-  const items=ls.length? ls.map(l=>`
+  const rich=state.oppView==='approved'||state.oppView==='archives';
+  const items=ls.length? ls.map(l=>{
+    const amt=rich?amountText(l.amount):'';
+    return `
     <button class="row leadbtn" data-lead="${esc(l.id)}">
       <span class="lt">${esc(l.title)}</span>
-      <span class="lm">${esc(l.area)} · ${typeLabel(l)} · ${esc(statusLabel(l.status))}${l.pendingSync?' · Saving':''}</span>
-    </button>`).join('') : `<div class="empty">Nothing here yet.</div>`;
+      <span class="lm">${esc(l.area)} · ${typeLabel(l)} · ${esc(statusLabel(l.status))}${amt?' · '+esc(amt):''}${rich?' · '+esc(postedLabel(l)):''}${l.pendingSync?' · Saving':''}</span>
+    </button>`;}).join('') : `<div class="empty">Nothing here yet.</div>`;
   panel(`<h1 class="title">${title}</h1><div class="rows">${items}</div>`, corners('opps'), true);
+}
+/* ---- Opportunities swipe feed (Hayden, 2026-11-23) ----
+   One floating card at a time over the undecided queue (status
+   'new'), hot leads first, then strongest. Four directions, one set
+   of action functions shared by swipe, tap zones, and arrow keys:
+   up = next, down = expand, right = approve, left = archive. */
+let feedHintTimer=null;
+function feedQueue(){
+  let ls=leads().filter(l=>l.status==='new');
+  if(state.feedMode==='hot') ls=ls.filter(fresh);
+  if(state.feedType!=='all') ls=ls.filter(l=>l.type===state.feedType);
+  if(state.feedArea!=='all') ls=ls.filter(l=>l.area===state.feedArea);
+  return ls.sort((a,b)=>((fresh(b)?1:0)-(fresh(a)?1:0))||(strength(b)-strength(a)));
+}
+const feedCurrent=()=>feedQueue()[state.feedIndex]||null;
+function openFeed(mode){
+  state.feedMode=mode; state.feedIndex=0; state.feedExpanded=false;
+  state.feedErr=''; state.feedHint=false;
+  go('feed');
+}
+function markFeedGesture(){
+  state.feedHintSeen=true; state.feedHint=false;
+  if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; }
+}
+/* The hint appears once, after 4 seconds on a card, and never again
+   this session once the user has made a first gesture of any kind. */
+function armFeedHint(){
+  if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; }
+  if(state.feedHintSeen||state.feedHint||state.screen!=='feed') return;
+  feedHintTimer=setTimeout(()=>{ feedHintTimer=null; if(state.screen==='feed'&&!state.feedHintSeen){ state.feedHint=true; render(); } },4000);
+}
+function stopFeedChrome(){
+  clearFeedZones();
+  if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; }
+}
+function feedUp(){
+  markFeedGesture();
+  if(state.feedBusy) return;
+  if(state.feedExpanded){ state.feedExpanded=false; render(); return; }
+  if(state.feedIndex<feedQueue().length){ state.feedIndex++; render(); }
+}
+function feedDown(){
+  markFeedGesture();
+  if(state.feedBusy||state.feedExpanded) return;
+  if(!feedCurrent()) return;
+  state.feedExpanded=true; render();
+}
+function feedApprove(){ feedDecide('reviewing'); }
+function feedArchive(){ feedDecide('passed'); }
+function feedAction(name){
+  if($('popupRoot').innerHTML) return;
+  ({up:feedUp, down:feedDown, approve:feedApprove, archive:feedArchive})[name]?.();
+}
+/* Approve and archive are ordinary status commands through the exact
+   path the detail view uses: same endpoint, same Idempotency-Key,
+   same 202-means-saving handling (status updated locally, flagged
+   pendingSync). 'reviewing' and 'passed' are both legal from 'new'
+   and carry no confirmation gate, so a swipe can never trigger the
+   engaged / outreach_sent attestations, which stay in the detail
+   flow. On failure the card stays put and the error shows plainly. */
+async function feedDecide(target){
+  markFeedGesture();
+  if(state.feedBusy) return;
+  const l=feedCurrent(); if(!l) return;
+  state.feedBusy=true; state.feedErr='';
+  try{
+    await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/leads/'+encodeURIComponent(l.id)+'/status',{
+      method:'POST',
+      headers:{'Idempotency-Key': crypto.randomUUID()},
+      body:JSON.stringify({tenant:state.tenant, status:target, confirmConversation:false, confirmSent:false})
+    });
+    l.status=target; l.pendingSync=true;
+    state.feedExpanded=false;
+  }catch(e){
+    state.feedErr=STATUS_ERRORS[e.code]||'We could not save that change. Please try again.';
+  }
+  state.feedBusy=false;
+  render();
+}
+/* Swipe on the card itself: touch or mouse drag past a threshold,
+   dominant axis wins. A recognized swipe stamps feedSwipeAt so the
+   click that trails a mouse drag cannot also fire a card button. */
+function wireFeedCard(){
+  const card=$('feedCard'); if(!card) return;
+  let sx=0, sy=0, tracking=false;
+  const start=(x,y)=>{ sx=x; sy=y; tracking=true; };
+  const end=(x,y)=>{
+    if(!tracking) return;
+    tracking=false;
+    const dx=x-sx, dy=y-sy;
+    if(Math.max(Math.abs(dx),Math.abs(dy))<40) return;
+    state.feedSwipeAt=Date.now();
+    if(Math.abs(dx)>Math.abs(dy)) feedAction(dx>0?'approve':'archive');
+    else feedAction(dy<0?'up':'down');
+  };
+  card.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; start(t.clientX,t.clientY); },{passive:true});
+  card.addEventListener('touchend',e=>{ const t=e.changedTouches[0]; end(t.clientX,t.clientY); });
+  card.addEventListener('mousedown',e=>{ start(e.clientX,e.clientY); });
+  card.addEventListener('mouseup',e=>{ end(e.clientX,e.clientY); });
+}
+/* Tap fallback for devices that do not swipe: four invisible zones
+   in the empty space around the panel, sized from the panel's own
+   rectangle so they can never overlap the panel or its buttons.
+   Above = next, below = expand, right = approve, left = archive. */
+function clearFeedZones(){ $('feedZones')?.remove(); }
+function buildFeedZones(){
+  clearFeedZones();
+  const panelEl=$('panel'); if(!panelEl) return;
+  const r=panelEl.getBoundingClientRect();
+  const vw=window.innerWidth, vh=window.innerHeight, gap=12;
+  const zones=document.createElement('div'); zones.id='feedZones';
+  const labels={up:'Next opportunity',down:'More info',approve:'Approve',archive:'Archive'};
+  const mk=(act,x,y,w,h)=>{
+    if(w<8||h<8) return;
+    const d=document.createElement('div');
+    d.className='feedzone'; d.dataset.feedzone=act;
+    d.setAttribute('role','button'); d.setAttribute('aria-label',labels[act]);
+    Object.assign(d.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
+    zones.appendChild(d);
+  };
+  mk('up', r.left, 0, r.width, r.top-gap);
+  mk('down', r.left, r.bottom+gap, r.width, vh-r.bottom-gap);
+  mk('archive', 0, r.top, r.left-gap, r.height);
+  mk('approve', r.right+gap, r.top, vw-r.right-gap, r.height);
+  document.body.appendChild(zones);
+}
+function vFeed(){
+  stopFeedChrome();
+  const title=state.feedMode==='hot'?'Hot Opportunities':'All Opportunities';
+  const areas=[...new Set(leads().map(l=>l.area))];
+  if(state.feedArea!=='all'&&!areas.includes(state.feedArea)) state.feedArea='all';
+  const chips=[['all','All'],['direct','Direct leads'],['trigger','Project triggers']]
+    .map(([v,n])=>`<button class="chip${state.feedType===v?' on':''}" data-feedtype="${v}">${n}</button>`).join('');
+  const filters=`<div class="chips">${chips}</div>
+  <select class="field feedarea" id="feedAreaSel" aria-label="Area filter"><option value="all">All areas</option>${areas.map(a=>`<option value="${esc(a)}"${state.feedArea===a?' selected':''}>${esc(a)}</option>`).join('')}</select>`;
+  const q=feedQueue();
+  const l=q[state.feedIndex]||null;
+  if(!l){
+    panel(`<h1 class="title">${title}</h1>${filters}
+    <div class="empty">You are all caught up.</div>
+    <div class="stack"><button class="bigbtn" id="feedBackBtn">Back to Opportunities</button></div>`, corners('opps'), true);
+    return;
+  }
+  const chipsRow=`<div class="feedchips"><span class="badge">New</span>${fresh(l)?'<span class="badge hot">Hot</span>':''}</div>`;
+  const amt=amountText(l.amount);
+  const card=state.feedExpanded
+    ? `<div class="feedcard" id="feedCard">${chipsRow}
+      <div class="feedtitle">${esc(l.title)}</div>
+      <div class="rows" style="margin-top:14px">
+        <div class="row"><span>County</span><b>${esc(l.area)}</b></div>
+        <div class="row"><span>Type</span><b>${typeLabel(l)}</b></div>
+        ${amt?`<div class="row"><span>Amount</span><b>${esc(amt)}</b></div>`:''}
+        <div class="row"><span>Contact</span><b>${esc(l.route)}</b></div>
+        <div class="row"><span>Status</span><b>${esc(statusLabel(l.status))}${l.pendingSync?' · Saving':''}</b></div>
+        <div class="row"><span>Posted</span><b>${esc(postedLabel(l))}</b></div>
+        ${l.updatedAt?`<div class="row"><span>Updated</span><b>${esc(new Date(l.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}))}</b></div>`:''}
+      </div>
+      ${l.intent?`<p class="feedintent">${esc(l.intent)}</p>`:''}
+      <div class="stack" style="margin-top:16px">
+        <button class="bigbtn primary" id="feedContactBtn">Contact</button>
+        <button class="bigbtn" id="feedCollapseBtn">Collapse</button>
+      </div></div>`
+    : `<div class="feedcard" id="feedCard">${chipsRow}
+      <div class="feedtitle">${esc(l.title)}</div>
+      <div class="feedmeta">${esc(l.area)} · ${typeLabel(l)}</div>
+      ${amt?`<div class="feedamount">${esc(amt)}</div>`:''}
+      <div class="feedmeta">Posted ${esc(postedLabel(l))}</div></div>`;
+  panel(`<h1 class="title">${title}</h1>${filters}
+  <div class="feedpos">${state.feedIndex+1} of ${q.length} · ${q.length-state.feedIndex-1} left</div>
+  ${card}
+  ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}
+  ${state.feedHint&&!state.feedHintSeen?`<div class="feedhint">Swipe up for next, down for more info, right to approve, left to archive</div>`:''}`, corners('opps'), true);
+  wireFeedCard();
+  buildFeedZones();
+  armFeedHint();
 }
 function nextStep(l){
   if(l.type==='trigger'&&l.status==='new') return ['Research this one','reviewing'];
@@ -485,7 +704,8 @@ function vSearch(){
   <div class="rows">${results}</div>`, corners('home'), true);
 }
 function render(){
-  ({login:vLogin,create:vCreate,forgot:vForgot,setpassword:vSetPassword,choose:vChoose,home:vHome,opps:vOpps,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
+  if(state.screen!=='feed') stopFeedChrome();
+  ({login:vLogin,create:vCreate,forgot:vForgot,setpassword:vSetPassword,choose:vChoose,home:vHome,opps:vOpps,feed:vFeed,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
 }
 
 async function attemptLogin(){
@@ -662,7 +882,10 @@ document.addEventListener('submit',e=>{
   if(e.target.id==='conciergeForm'){ e.preventDefault(); sendConcierge(); }
 });
 document.addEventListener('click',e=>{
+  const z=e.target.closest('[data-feedzone]');
+  if(z){ if(state.screen==='feed') feedAction(z.dataset.feedzone); return; }
   const b=e.target.closest('button'); if(!b) return;
+  if(state.screen==='feed'&&state.feedSwipeAt&&Date.now()-state.feedSwipeAt<250) return;
   if(b.id==='loginBtn'){attemptLogin(); return}
   if(b.id==='createBtn'){attemptCreate(); return}
   if(b.id==='forgotBtn'){attemptForgot(); return}
@@ -681,6 +904,12 @@ document.addEventListener('click',e=>{
     return go(map[b.dataset.nav]||'home');
   }
   if(b.dataset.view){state.oppView=b.dataset.view; state.lastOppView=b.dataset.view; return go('list')}
+  if(b.dataset.feed){openFeed(b.dataset.feed); return}
+  if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
+  if(b.dataset.feedtype){state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
+  if(b.id==='feedBackBtn'){return go('opps')}
+  if(b.id==='feedCollapseBtn'){state.feedExpanded=false; render(); return}
+  if(b.id==='feedContactBtn'){const fl=feedCurrent(); if(fl){state.selected=fl.id; openContact();} return}
   if(b.dataset.county){state.oppView='county'; state.county=b.dataset.county; return go('list')}
   if(b.dataset.lead){state.selected=b.dataset.lead; return go('detail')}
   if(b.dataset.insight){state.lastInsightsView=b.dataset.insight; return go('insights')}
@@ -750,9 +979,23 @@ async function setStatus(target){
 document.addEventListener('input',e=>{
   if(e.target.id==='searchInput'){state.lastSearch=e.target.value; render(); const si=$('searchInput'); if(si){si.focus(); si.setSelectionRange(si.value.length,si.value.length)}}
 });
+document.addEventListener('change',e=>{
+  if(e.target.id==='feedAreaSel'){state.feedArea=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+});
 document.addEventListener('click',e=>{ if(e.target.id==='overlay') closePopup(); });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&$('popupRoot').innerHTML){closePopup(); return}
+  /* Feed arrow keys (desktops): same four actions as swipe and tap.
+     Only on the feed screen, never while a popup is open, and never
+     while typing in a field (the Area select keeps its own arrows). */
+  if(state.screen==='feed'&&e.key.startsWith('Arrow')&&!$('popupRoot').innerHTML){
+    const tag=document.activeElement?.tagName;
+    if(!['INPUT','TEXTAREA','SELECT'].includes(tag)){
+      e.preventDefault();
+      feedAction({ArrowUp:'up',ArrowDown:'down',ArrowRight:'approve',ArrowLeft:'archive'}[e.key]);
+      return;
+    }
+  }
   if(e.key==='Enter'&&['u','p'].includes(document.activeElement?.id)){e.preventDefault(); attemptLogin(); return}
   if(e.key==='Enter'&&['cu','cp'].includes(document.activeElement?.id)){e.preventDefault(); attemptCreate(); return}
   if(e.key==='Enter'&&document.activeElement?.id==='fu'){e.preventDefault(); attemptForgot(); return}
