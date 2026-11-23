@@ -111,7 +111,14 @@ button.row:hover{border-color:rgba(31,226,255,.55)}
 .popup h2{margin:0 0 20px; text-align:center; font-size:24px}
 .xbtn{position:absolute; top:12px; right:12px; width:42px; height:42px; border-radius:50%; background:rgba(22,35,58,.9); border:1px solid var(--line); color:var(--ink); font-size:18px}
 .toast{text-align:center; color:var(--cyan); font-size:15px; font-weight:650; margin-top:14px; min-height:20px}
-.concierge-btn{border-color:rgba(215,179,106,.45)}
+.concierge-float{
+  position:fixed; right:16px; bottom:16px; z-index:40;
+  min-height:52px; padding:14px 22px; border-radius:999px;
+  background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a;
+  border:1px solid rgba(215,179,106,.55);
+  font-size:17px; font-weight:780;
+  box-shadow:0 14px 34px rgba(0,0,0,.45);
+}
 .badge.hot{background:var(--gold)}
 .chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px}
 .chip{
@@ -124,14 +131,33 @@ select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
 .feedcard{
   background:rgba(22,35,58,.55); border:1px solid var(--line); border-radius:22px;
   padding:26px 22px; touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none;
+  animation:cardin .25s ease both; will-change:transform;
 }
+@keyframes cardin{from{opacity:0; transform:scale(.96)}to{opacity:1; transform:scale(1)}}
+@media (prefers-reduced-motion: reduce){
+  .feedcard{animation:none}
+}
+.feedfx{position:fixed; inset:0; pointer-events:none; z-index:60; overflow:hidden}
+.feedp{position:absolute; border-radius:50%}
 .feedcard:active{cursor:grabbing}
 .feedchips{display:flex; gap:8px; margin-bottom:14px}
 .feedtitle{font-size:24px; font-weight:760; line-height:1.2}
 .feedmeta{font-size:16px; color:var(--muted); margin-top:8px}
 .feedamount{font-size:20px; font-weight:750; color:var(--gold); margin-top:10px}
 .feedintent{font-size:16px; margin:16px 0 0; white-space:pre-wrap}
-.feedhint{text-align:center; color:var(--cyan); font-size:15px; font-weight:650; margin-top:16px}
+.badge.strength{background:rgba(215,179,106,.16); color:var(--gold); border:1px solid rgba(215,179,106,.55)}
+.feedwrap{position:relative; width:min(480px,100%)}
+.feedwrap.enter{animation:rise .38s ease both}
+.feedstage{position:relative; margin:40px 0}
+.feedlabel{
+  position:absolute; z-index:2; pointer-events:none; white-space:nowrap;
+  background:rgba(22,35,58,.88); border:1px solid var(--line); color:var(--muted);
+  font-size:14px; font-weight:650; padding:7px 13px; border-radius:999px;
+}
+.feedlabel.up{left:50%; transform:translateX(-50%); bottom:calc(100% + 10px)}
+.feedlabel.down{left:50%; transform:translateX(-50%); top:calc(100% + 10px)}
+.feedlabel.left{right:calc(100% + 10px); top:50%; transform:translateY(-50%)}
+.feedlabel.right{left:calc(100% + 10px); top:50%; transform:translateY(-50%)}
 .feedzone{position:fixed; z-index:1; cursor:pointer}
 .hdlink{display:block; text-decoration:none; margin-bottom:14px}
 @media (max-width:480px){
@@ -144,6 +170,7 @@ select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
 </head>
 <body>
 <main class="panel enter" id="panel" aria-live="polite"></main>
+<div id="conciergeRoot"></div>
 <div id="popupRoot"></div>
 
 <script>
@@ -174,8 +201,8 @@ const state={
   lastSearch:'',
   county:null, oppView:null, selected:null, savedMsg:false,
   feedMode:'all', feedType:'all', feedArea:'all', feedIndex:0,
-  feedExpanded:false, feedBusy:false, feedErr:'', feedHint:false,
-  feedHintSeen:false, feedSwipeAt:0,
+  feedExpanded:false, feedBusy:false, feedErr:'', feedLabels:true,
+  feedLabelActions:0, feedSwipeAt:0,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
 };
 const $=id=>document.getElementById(id);
@@ -222,7 +249,7 @@ function toLead(row){
     type: row.lead_type||'trigger',
     area: row.area||'Market not set',
     intent: row.summary||'',
-    route, tier: row.contact_tier||'D',
+    route, tier: row.contact_tier||null,
     status: row.operator_status||'new',
     amount: row.amount||null,
     age, contacts,
@@ -295,6 +322,25 @@ const postedLabel=l=>l.age<24?ageLabel(l):new Date(Date.now()-l.age*3600000).toL
 /* Amounts are shown only when a lead actually carries one (the API
    supplies none today, so this renders nothing until it does). */
 const amountText=a=>(a===null||a===undefined||a==='')?'':(typeof a==='number'&&Number.isFinite(a)?'$'+a.toLocaleString('en-US'):String(a));
+/* Strength tag for the feed card (Hayden, 2026-11-23): a plain word
+   from the lead's tier (A Strong, B Solid, C Fair, D Light). The
+   tier is the board's own value, carried end to end: the Notion
+   board's "Contact Tier" select, read by the per-tenant mapper and
+   normalized to A-D (null when the board record has none), stored
+   by board sync as leads.contact_tier, and returned by GET
+   /api/leads, so toLead receives it as row.contact_tier. toLead
+   preserves null rather than defaulting: only a lead whose board
+   record genuinely has no tier falls back to the strength() score
+   bands: >=30 Strong, 20-29 Solid, 10-19 Fair, below 10 Light. If
+   neither a tier nor a finite score exists, there is no tag. */
+const STRENGTH_WORDS=Object.freeze({A:'Strong',B:'Solid',C:'Fair',D:'Light'});
+function strengthWord(l){
+  const tiered=STRENGTH_WORDS[String(l?.tier||'').toUpperCase()];
+  if(tiered) return tiered;
+  const s=strength(l||{});
+  if(!Number.isFinite(s)) return '';
+  return s>=30?'Strong':s>=20?'Solid':s>=10?'Fair':'Light';
+}
 /* The two Opportunities list sets (Hayden, 2026-11-23). Approved is
    every lead the operator has taken on and not closed out; Archives
    is every lead that has left the working pipeline. Together with
@@ -310,12 +356,27 @@ function corners(backTarget){
 function cornersLite(backTarget){ return `<button class="backbtn" data-back="${backTarget}" aria-label="Back">←</button>`; }
 function panel(html,cornersHtml,concierge){
   $('panel').className='panel enter'+(cornersHtml?' with-corners':'');
-  // Signed-in views only (login/create/forgot/loading/error never pass
-  // this): the shared Concierge entry, inside the floating panel like
-  // everything else. The glyph is the person-in-tuxedo emoji, whose
-  // rendering is a bow tie; there is no standalone bow-tie emoji.
-  const conciergeHtml=concierge?`<div class="stack" style="margin-top:14px"><button class="bigbtn concierge-btn" id="conciergeBtn">🤵 Concierge</button></div>`:'';
-  $('panel').innerHTML=html+conciergeHtml+(cornersHtml||'');
+  $('panel').innerHTML=html+(cornersHtml||'');
+  renderConcierge(concierge);
+}
+/* The feed screens render WITHOUT the outer panel box (Hayden,
+   2026-11-23): the lead card, the filters, and the position
+   indicator float on their own directly on the gradient, inside a
+   plain positioning wrapper that carries no box styling at all. */
+function bare(html,cornersHtml,concierge){
+  $('panel').className='feedwrap enter';
+  $('panel').innerHTML=html+(cornersHtml||'');
+  renderConcierge(concierge);
+}
+/* Concierge entry (Hayden, 2026-11-23, synonymous with ClientHub):
+   a floating button fixed to the bottom-right of the viewport,
+   labelled with the chat-bubble glyph, on signed-in views only.
+   panel()/bare() call this on every render: signed-in views pass
+   the flag, signed-out views (login/create/forgot/setpassword,
+   loading, error) never do, so the button clears there. */
+function renderConcierge(show){
+  const root=$('conciergeRoot'); if(!root) return;
+  root.innerHTML=show?`<button class="concierge-float" id="conciergeBtn">💬 Concierge</button>`:'';
 }
 
 function vLoading(){
@@ -452,7 +513,19 @@ function vList(){
    'new'), hot leads first, then strongest. Four directions, one set
    of action functions shared by swipe, tap zones, and arrow keys:
    up = next, down = expand, right = approve, left = archive. */
-let feedHintTimer=null;
+/* Directional instruction labels (Hayden, 2026-11-23): four pills
+   float off the sides of the lead card. They are visible when the
+   feed opens, hide once FEED_LABEL_HIDE_AFTER directional actions
+   (swipe, tap zone, or arrow key, any mix) have been registered
+   since they were shown, and reappear after FEED_LABEL_IDLE_MS
+   with no activity at all: no directional action, no expand or
+   collapse, no filter change. Every one of those re-renders the
+   feed, and vFeed re-arms the idle timer on each render, so the
+   timer measures true inactivity. While the card is expanded the
+   labels stay hidden; the idle rules resume on collapse. */
+const FEED_LABEL_HIDE_AFTER=3;
+const FEED_LABEL_IDLE_MS=6000;
+let feedIdleTimer=null;
 function feedQueue(){
   let ls=leads().filter(l=>l.status==='new');
   if(state.feedMode==='hot') ls=ls.filter(fresh);
@@ -463,32 +536,38 @@ function feedQueue(){
 const feedCurrent=()=>feedQueue()[state.feedIndex]||null;
 function openFeed(mode){
   state.feedMode=mode; state.feedIndex=0; state.feedExpanded=false;
-  state.feedErr=''; state.feedHint=false;
+  state.feedErr=''; state.feedLabels=true; state.feedLabelActions=0;
   go('feed');
 }
-function markFeedGesture(){
-  state.feedHintSeen=true; state.feedHint=false;
-  if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; }
+function clearFeedIdle(){ if(feedIdleTimer){ clearTimeout(feedIdleTimer); feedIdleTimer=null; } }
+/* Arm the 6-second idle timer. Called at the end of every feed
+   render, so any activity that re-renders pushes the reappearance
+   out by a full idle window. On firing, the labels come back and
+   the action counter resets, so another 3 actions hide them. */
+function armFeedIdle(){
+  clearFeedIdle();
+  if(state.screen!=='feed') return;
+  feedIdleTimer=setTimeout(()=>{ feedIdleTimer=null;
+    if(state.screen==='feed'&&!state.feedLabels&&!state.feedExpanded&&feedCurrent()){
+      state.feedLabels=true; state.feedLabelActions=0; render();
+    } },FEED_LABEL_IDLE_MS);
 }
-/* The hint appears once, after 4 seconds on a card, and never again
-   this session once the user has made a first gesture of any kind. */
-function armFeedHint(){
-  if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; }
-  if(state.feedHintSeen||state.feedHint||state.screen!=='feed') return;
-  feedHintTimer=setTimeout(()=>{ feedHintTimer=null; if(state.screen==='feed'&&!state.feedHintSeen){ state.feedHint=true; render(); } },4000);
+/* One directional action (swipe, tap zone, or arrow key) through
+   feedAction: count it, and hide the labels at the threshold. */
+function noteFeedDirectional(){
+  state.feedLabelActions++;
+  if(state.feedLabelActions>=FEED_LABEL_HIDE_AFTER) state.feedLabels=false;
 }
 function stopFeedChrome(){
   clearFeedZones();
-  if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; }
+  clearFeedIdle();
 }
 function feedUp(){
-  markFeedGesture();
   if(state.feedBusy) return;
   if(state.feedExpanded){ state.feedExpanded=false; render(); return; }
   if(state.feedIndex<feedQueue().length){ state.feedIndex++; render(); }
 }
 function feedDown(){
-  markFeedGesture();
   if(state.feedBusy||state.feedExpanded) return;
   if(!feedCurrent()) return;
   state.feedExpanded=true; render();
@@ -497,6 +576,8 @@ function feedApprove(){ feedDecide('reviewing'); }
 function feedArchive(){ feedDecide('passed'); }
 function feedAction(name){
   if($('popupRoot').innerHTML) return;
+  noteFeedDirectional();
+  feedParticles(name);
   ({up:feedUp, down:feedDown, approve:feedApprove, archive:feedArchive})[name]?.();
 }
 /* Approve and archive are ordinary status commands through the exact
@@ -507,7 +588,6 @@ function feedAction(name){
    engaged / outreach_sent attestations, which stay in the detail
    flow. On failure the card stays put and the error shows plainly. */
 async function feedDecide(target){
-  markFeedGesture();
   if(state.feedBusy) return;
   const l=feedCurrent(); if(!l) return;
   state.feedBusy=true; state.feedErr='';
@@ -525,37 +605,111 @@ async function feedDecide(target){
   state.feedBusy=false;
   render();
 }
-/* Swipe on the card itself: touch or mouse drag past a threshold,
-   dominant axis wins. A recognized swipe stamps feedSwipeAt so the
-   click that trails a mouse drag cannot also fire a card button. */
+/* Particle confirmations (Hayden, 2026-11-23): a short burst from
+   the screen edge the action went toward, fired by feedAction so
+   every registration method (drag release, tap zone, arrow key)
+   gets one. DOM particles with the Web Animations API, capped at
+   24 per burst, layer removed after the burst. Reduced motion:
+   no particles at all. The layer is pointer-events:none and sits
+   above everything, so it can never block input. */
+const REDUCED_MOTION=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function feedParticles(dir){
+  if(REDUCED_MOTION()) return;
+  const card=$('feedCard'); const r=card?card.getBoundingClientRect():null;
+  const vw=window.innerWidth, vh=window.innerHeight;
+  const cx=r?r.left+r.width/2:vw/2;
+  const conf={
+    approve:{colors:['#d7b36a','#3ddc84','#f4d47c'], n:24, size:7,
+      from:()=>({x:vw-8, y:vh*0.2+Math.random()*vh*0.6}),
+      drift:()=>({x:-(60+Math.random()*150), y:(Math.random()-0.5)*170})},
+    archive:{colors:['#8fa5bd','#64798f','#aebdcf'], n:20, size:6,
+      from:()=>({x:8, y:vh*0.2+Math.random()*vh*0.6}),
+      drift:()=>({x:40+Math.random()*90, y:20+Math.random()*70})},
+    up:{colors:['#1fe2ff','#8ff3ff','#ffffff'], n:18, size:5,
+      from:()=>({x:(r?r.left:cx)+Math.random()*(r?r.width:0), y:r?r.top+4:10}),
+      drift:()=>({x:(Math.random()-0.5)*40, y:-(80+Math.random()*90)})},
+    down:{colors:['#bffcff','#ffffff','#1fe2ff'], n:18, size:5,
+      from:()=>({x:(r?r.left:cx)+Math.random()*(r?r.width:0), y:r?r.bottom-4:vh-10}),
+      drift:()=>({x:(Math.random()-0.5)*50, y:50+Math.random()*70})},
+  }[dir];
+  if(!conf) return;
+  const layer=document.createElement('div'); layer.className='feedfx';
+  for(let i=0;i<conf.n;i++){
+    const p=document.createElement('span'); p.className='feedp';
+    const s=conf.from(), d=conf.drift(), sz=conf.size-2+Math.random()*4;
+    Object.assign(p.style,{left:s.x+'px', top:s.y+'px', width:sz+'px', height:sz+'px', background:conf.colors[i%conf.colors.length]});
+    layer.appendChild(p);
+    p.animate([
+      {transform:'translate(0px,0px)', opacity:1},
+      {transform:`translate(${d.x}px,${d.y}px)`, opacity:0},
+    ],{duration:600+Math.random()*300, delay:Math.random()*80, easing:'ease-out', fill:'forwards'});
+  }
+  document.body.appendChild(layer);
+  setTimeout(()=>layer.remove(),1000);
+}
+/* Drag on the card itself (Pointer Events unify mouse and touch):
+   the card FOLLOWS the pointer with a slight rotation on the
+   horizontal drag. Release under the 40px threshold springs back
+   with an overshoot ease. Release past it flies the card off in
+   that direction and only then registers the action; expand
+   (down) is the exception: it settles back and expands in place.
+   With reduced motion there is no fly-off: the action registers
+   instantly. A real drag stamps feedSwipeAt so the click trailing
+   it cannot also fire a card button. */
 function wireFeedCard(){
   const card=$('feedCard'); if(!card) return;
-  let sx=0, sy=0, tracking=false;
-  const start=(x,y)=>{ sx=x; sy=y; tracking=true; };
-  const end=(x,y)=>{
-    if(!tracking) return;
-    tracking=false;
-    const dx=x-sx, dy=y-sy;
-    if(Math.max(Math.abs(dx),Math.abs(dy))<40) return;
-    state.feedSwipeAt=Date.now();
-    if(Math.abs(dx)>Math.abs(dy)) feedAction(dx>0?'approve':'archive');
-    else feedAction(dy<0?'up':'down');
+  let sx=0, sy=0, dx=0, dy=0, pid=null;
+  const springBack=()=>{
+    card.style.transition='transform .3s cubic-bezier(.34,1.56,.64,1)';
+    card.style.transform='';
+    card.style.opacity='';
   };
-  card.addEventListener('touchstart',e=>{ const t=e.changedTouches[0]; start(t.clientX,t.clientY); },{passive:true});
-  card.addEventListener('touchend',e=>{ const t=e.changedTouches[0]; end(t.clientX,t.clientY); });
-  card.addEventListener('mousedown',e=>{ start(e.clientX,e.clientY); });
-  card.addEventListener('mouseup',e=>{ end(e.clientX,e.clientY); });
+  const onMove=e=>{
+    if(pid===null||e.pointerId!==pid) return;
+    dx=e.clientX-sx; dy=e.clientY-sy;
+    const rot=Math.max(-6,Math.min(6,dx/18));
+    card.style.transform=`translate(${dx}px,${dy}px) rotate(${rot}deg)`;
+  };
+  const onUp=e=>{
+    if(pid===null||e.pointerId!==pid) return;
+    pid=null;
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    const ax=Math.abs(dx), ay=Math.abs(dy);
+    if(Math.max(ax,ay)>=10) state.feedSwipeAt=Date.now();
+    if(Math.max(ax,ay)<40){ springBack(); return; }
+    const dir=ax>ay?(dx>0?'approve':'archive'):(dy<0?'up':'down');
+    if(dir==='down'||REDUCED_MOTION()){ springBack(); feedAction(dir); return; }
+    const offX=dir==='approve'?window.innerWidth+80:dir==='archive'?-(window.innerWidth+80):dx;
+    const offY=dir==='up'?-(window.innerHeight+80):dy;
+    card.style.transition='transform .28s ease-in, opacity .28s ease-in';
+    card.style.transform=`translate(${offX}px,${offY}px) rotate(${dir==='approve'?10:dir==='archive'?-10:0}deg)`;
+    card.style.opacity='0';
+    setTimeout(()=>{ if(state.screen==='feed') feedAction(dir); },290);
+  };
+  card.addEventListener('pointerdown',e=>{
+    if(state.feedBusy||pid!==null) return;
+    pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0; dy=0;
+    card.style.transition='none';
+    document.addEventListener('pointermove',onMove);
+    document.addEventListener('pointerup',onUp);
+  });
 }
 /* Tap fallback for devices that do not swipe: four invisible zones
-   in the empty space around the panel, sized from the panel's own
-   rectangle so they can never overlap the panel or its buttons.
-   Above = next, below = expand, right = approve, left = archive. */
+   in the empty space around the floating lead card, sized from the
+   card's own rectangle so they can never overlap the card itself.
+   Above = next, below = expand, right = approve, left = archive.
+   The approve (right) zone is capped so it never runs under the
+   floating Concierge button in the bottom-right corner: its bottom
+   stops a reserved strip above the button, and the button's own
+   stacking (z-index 40, above the zones) wins any remaining edge. */
 function clearFeedZones(){ $('feedZones')?.remove(); }
 function buildFeedZones(){
   clearFeedZones();
-  const panelEl=$('panel'); if(!panelEl) return;
-  const r=panelEl.getBoundingClientRect();
+  const cardEl=$('feedCard'); if(!cardEl) return;
+  const r=cardEl.getBoundingClientRect();
   const vw=window.innerWidth, vh=window.innerHeight, gap=12;
+  const conciergeReserve=84;
   const zones=document.createElement('div'); zones.id='feedZones';
   const labels={up:'Next opportunity',down:'More info',approve:'Approve',archive:'Archive'};
   const mk=(act,x,y,w,h)=>{
@@ -569,11 +723,11 @@ function buildFeedZones(){
   mk('up', r.left, 0, r.width, r.top-gap);
   mk('down', r.left, r.bottom+gap, r.width, vh-r.bottom-gap);
   mk('archive', 0, r.top, r.left-gap, r.height);
-  mk('approve', r.right+gap, r.top, vw-r.right-gap, r.height);
+  mk('approve', r.right+gap, r.top, vw-r.right-gap, Math.min(r.bottom, vh-conciergeReserve)-r.top);
   document.body.appendChild(zones);
 }
 function vFeed(){
-  stopFeedChrome();
+  clearFeedZones();
   const title=state.feedMode==='hot'?'Hot Opportunities':'All Opportunities';
   const areas=[...new Set(leads().map(l=>l.area))];
   if(state.feedArea!=='all'&&!areas.includes(state.feedArea)) state.feedArea='all';
@@ -584,12 +738,13 @@ function vFeed(){
   const q=feedQueue();
   const l=q[state.feedIndex]||null;
   if(!l){
-    panel(`<h1 class="title">${title}</h1>${filters}
+    bare(`<h1 class="title">${title}</h1>${filters}
     <div class="empty">You are all caught up.</div>
     <div class="stack"><button class="bigbtn" id="feedBackBtn">Back to Opportunities</button></div>`, corners('opps'), true);
     return;
   }
-  const chipsRow=`<div class="feedchips"><span class="badge">New</span>${fresh(l)?'<span class="badge hot">Hot</span>':''}</div>`;
+  const sw=strengthWord(l);
+  const chipsRow=`<div class="feedchips">${sw?`<span class="badge strength">${esc(sw)}</span>`:''}<span class="badge">New</span>${fresh(l)?'<span class="badge hot">Hot</span>':''}</div>`;
   const amt=amountText(l.amount);
   const card=state.feedExpanded
     ? `<div class="feedcard" id="feedCard">${chipsRow}
@@ -613,14 +768,15 @@ function vFeed(){
       <div class="feedmeta">${esc(l.area)} · ${typeLabel(l)}</div>
       ${amt?`<div class="feedamount">${esc(amt)}</div>`:''}
       <div class="feedmeta">Posted ${esc(postedLabel(l))}</div></div>`;
-  panel(`<h1 class="title">${title}</h1>${filters}
+  const labels=state.feedLabels&&!state.feedExpanded
+    ? `<div class="feedlabels" aria-hidden="true"><span class="feedlabel up">Swipe up: next lead</span><span class="feedlabel down">Swipe down: more info</span><span class="feedlabel right">Swipe right: approve</span><span class="feedlabel left">Swipe left: archive</span></div>`:'';
+  bare(`<h1 class="title">${title}</h1>${filters}
   <div class="feedpos">${state.feedIndex+1} of ${q.length} · ${q.length-state.feedIndex-1} left</div>
-  ${card}
-  ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}
-  ${state.feedHint&&!state.feedHintSeen?`<div class="feedhint">Swipe up for next, down for more info, right to approve, left to archive</div>`:''}`, corners('opps'), true);
+  <div class="feedstage">${card}${labels}</div>
+  ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}`, corners('opps'), true);
   wireFeedCard();
   buildFeedZones();
-  armFeedHint();
+  armFeedIdle();
 }
 function nextStep(l){
   if(l.type==='trigger'&&l.status==='new') return ['Research this one','reviewing'];
@@ -828,7 +984,7 @@ async function openConcierge(){
   const visit=booking?`<a class="bigbtn hdlink" href="${esc(booking)}" target="_blank" rel="noopener">Visit Help Desk</a>`:'';
   $('popupRoot').innerHTML=`<div class="overlay" id="overlay"><div class="popup" role="dialog" aria-label="Concierge">
     <button class="xbtn" id="popupX" aria-label="Close">✕</button>
-    <h2>🤵 Concierge</h2>
+    <h2>💬 Concierge</h2>
     ${visit}
     <form id="conciergeForm">
       <textarea class="field" id="conciergeText" placeholder="What do you need?" aria-label="What do you need?"></textarea>
