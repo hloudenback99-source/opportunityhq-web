@@ -133,7 +133,7 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 .feedcard{
   background:rgba(22,35,58,.55); border:1px solid var(--line); border-radius:22px;
   padding:26px 22px; touch-action:none; cursor:grab; user-select:none; -webkit-user-select:none;
-  animation:cardin .25s ease both; will-change:transform;
+  animation:cardin .25s ease backwards; will-change:transform;
 }
 @keyframes cardin{from{opacity:0; transform:scale(.96)}to{opacity:1; transform:scale(1)}}
 @media (prefers-reduced-motion: reduce){
