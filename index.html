@@ -154,7 +154,7 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 .feedstage{position:relative; margin:40px 0}
 .feedlabel{
   position:absolute; z-index:2; pointer-events:none; white-space:nowrap;
-  color:var(--ink); font-size:14px; font-weight:650;
+  color:var(--ink); font-size:32px; line-height:1; font-weight:650;
   text-shadow:0 1px 10px rgba(0,0,0,.7), 0 0 3px rgba(0,0,0,.5);
   animation:feedlabelpulse 2.9s ease-in-out infinite alternate;
 }
@@ -172,6 +172,14 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 .feedlabel.left{right:calc(100% + 10px); top:50%; transform:translateY(-50%)}
 .feedlabel.right{left:calc(100% + 10px); top:50%; transform:translateY(-50%)}
 .feedzone{position:fixed; z-index:1; cursor:pointer}
+.feedbtns{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
+.feedbtn{
+  min-height:48px; padding:12px 10px; text-align:center;
+  background:linear-gradient(180deg,var(--btn2),var(--btn));
+  border:1px solid var(--line); border-radius:16px; color:var(--ink);
+  font-size:17px; font-weight:650; cursor:pointer;
+}
+.feedbtn.primary{background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a; border-color:transparent; font-weight:780}
 .hdlink{display:block; text-decoration:none; margin-bottom:14px}
 @media (max-width:480px){
   body{padding:14px 10px}
@@ -216,7 +224,7 @@ const state={
   county:null, oppView:null, selected:null, savedMsg:false,
   feedStatus:'all', feedStrength:'all', feedType:'all', feedArea:'all', feedIndex:0,
   feedExpanded:false, feedBusy:false, feedErr:'', feedLabels:true,
-  feedLabelActions:0, feedSwipeAt:0,
+  feedLabelActions:0, feedSwipeAt:0, feedSwipe:true,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
 };
 const $=id=>document.getElementById(id);
@@ -541,9 +549,14 @@ function vList(){
    One floating card at a time over the undecided queue (status
    'new'), hot leads first, then strongest. Four directions, one set
    of action functions shared by swipe, tap zones, and arrow keys:
-   up = next, down = expand, right = approve, left = archive. */
+   up = next, down = expand, right = approve, left = archive.
+   A Swipe mode toggle in the filter row (state.feedSwipe, default
+   on) turns ALL directional input off: no drag, no tap zones, no
+   arrow keys, no labels. The card then carries the four actions
+   as buttons (Next, Approve, Archive, More info) through the same
+   feedAction dispatcher. */
 /* Directional instruction labels (Hayden, 2026-11-23): four
-   bare-text labels float off the sides of the lead card, slowly
+   emoji-arrow labels float off the sides of the lead card, slowly
    pulsating between blurred/translucent and opaque/sharp while
    in view. They are visible when the
    feed opens, hide once FEED_LABEL_HIDE_AFTER directional actions
@@ -584,6 +597,7 @@ function clearFeedIdle(){ if(feedIdleTimer){ clearTimeout(feedIdleTimer); feedId
 function armFeedIdle(){
   clearFeedIdle();
   if(state.screen!=='feed') return;
+  if(!state.feedSwipe) return;
   feedIdleTimer=setTimeout(()=>{ feedIdleTimer=null;
     if(state.screen==='feed'&&!state.feedLabels&&!state.feedExpanded&&feedCurrent()){
       state.feedLabels=true; state.feedLabelActions=0; render();
@@ -779,6 +793,27 @@ function buildFeedZones(){
   mk('approve', r.right+gap, r.top, vw-r.right-gap, Math.min(r.bottom, vh-conciergeReserve)-r.top);
   document.body.appendChild(zones);
 }
+/* Swipe mode OFF (Hayden, 2026-11-23): with directional input
+   disabled, the lead card carries its own decision buttons. They
+   call the same feedAction dispatcher, so approve still posts
+   'reviewing', archive 'passed', and errors and particle
+   confirmations behave identically. Expanded, More info is
+   replaced by Collapse, which dispatches 'up': exactly what the
+   up gesture does on an expanded card. The buttons are ordinary
+   card buttons, and a press on one never starts a drag (the drag
+   wiring is not even attached in this mode, and its pointerdown
+   guard already bails on buttons). */
+function feedCardBtns(){
+  const info=state.feedExpanded
+    ? `<button class="feedbtn" data-feedbtn="collapse">Collapse</button>`
+    : `<button class="feedbtn" data-feedbtn="down">More info</button>`;
+  return `<div class="feedbtns">
+    <button class="feedbtn" data-feedbtn="up">Next</button>
+    <button class="feedbtn primary" data-feedbtn="approve">Approve</button>
+    <button class="feedbtn" data-feedbtn="archive">Archive</button>
+    ${info}
+  </div>`;
+}
 function vFeed(){
   clearFeedZones();
   const title=state.feedStatus==='hot'?'Hot Opportunities':'All Opportunities';
@@ -793,7 +828,8 @@ function vFeed(){
   const filters=`<div class="feedfilters" data-nogesture>${chips}
   <select class="field feedselect" id="feedStatusSel" aria-label="Status filter">${statusOpts}</select>
   <select class="field feedselect" id="feedStrengthSel" aria-label="Strength filter">${strengthOpts}</select>
-  <select class="field feedselect" id="feedAreaSel" aria-label="Area filter"><option value="all">All areas</option>${areas.map(a=>`<option value="${esc(a)}"${state.feedArea===a?' selected':''}>${esc(a)}</option>`).join('')}</select></div>`;
+  <select class="field feedselect" id="feedAreaSel" aria-label="Area filter"><option value="all">All areas</option>${areas.map(a=>`<option value="${esc(a)}"${state.feedArea===a?' selected':''}>${esc(a)}</option>`).join('')}</select>
+  <button class="chip${state.feedSwipe?' on':''}" id="feedSwipeToggle" aria-pressed="${state.feedSwipe}">Swipe mode: ${state.feedSwipe?'On':'Off'}</button></div>`;
   const q=feedQueue();
   const l=q[state.feedIndex]||null;
   if(!l){
@@ -820,22 +856,26 @@ function vFeed(){
       ${l.intent?`<p class="feedintent">${esc(l.intent)}</p>`:''}
       <div class="stack" style="margin-top:16px">
         <button class="bigbtn primary" id="feedContactBtn">Contact</button>
-        <button class="bigbtn" id="feedCollapseBtn">Collapse</button>
-      </div></div>`
+        ${state.feedSwipe?'<button class="bigbtn" id="feedCollapseBtn">Collapse</button>':''}
+      </div>${state.feedSwipe?'':feedCardBtns()}</div>`
     : `<div class="feedcard" id="feedCard">${chipsRow}
       <div class="feedtitle">${esc(l.title)}</div>
       <div class="feedmeta">${esc(l.area)} · ${typeLabel(l)}</div>
       ${amt?`<div class="feedamount">${esc(amt)}</div>`:''}
-      <div class="feedmeta">Posted ${esc(postedLabel(l))}</div></div>`;
-  const labels=state.feedLabels&&!state.feedExpanded
-    ? `<div class="feedlabels" aria-hidden="true"><span class="feedlabel up">Swipe up: next lead</span><span class="feedlabel down">Swipe down: more info</span><span class="feedlabel right">Swipe right: approve</span><span class="feedlabel left">Swipe left: archive</span></div>`:'';
+      <div class="feedmeta">Posted ${esc(postedLabel(l))}</div>${state.feedSwipe?'':feedCardBtns()}</div>`;
+  const labels=state.feedSwipe&&state.feedLabels&&!state.feedExpanded
+    ? `<div class="feedlabels"><span class="feedlabel up" role="img" aria-label="Swipe up for next lead" title="Swipe up: next lead">⬆️</span><span class="feedlabel down" role="img" aria-label="Swipe down for more info" title="Swipe down: more info">⬇️</span><span class="feedlabel right" role="img" aria-label="Swipe right to approve" title="Swipe right: approve">➡️</span><span class="feedlabel left" role="img" aria-label="Swipe left to archive" title="Swipe left: archive">⬅️</span></div>`:'';
   bare(`<h1 class="title">${title}</h1>${filters}
   <div class="feedpos">${state.feedIndex+1} of ${q.length} · ${q.length-state.feedIndex-1} left</div>
   <div class="feedstage">${card}${labels}</div>
   ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}`, cornersFeed(), true);
-  wireFeedCard();
-  buildFeedZones();
-  armFeedIdle();
+  if(state.feedSwipe){
+    wireFeedCard();
+    buildFeedZones();
+    armFeedIdle();
+  }else{
+    clearFeedIdle();
+  }
 }
 function nextStep(l){
   if(l.type==='trigger'&&l.status==='new') return ['Research this one','reviewing'];
@@ -1122,6 +1162,8 @@ document.addEventListener('click',e=>{
   if(b.dataset.feed){openFeed(b.dataset.feed); return}
   if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
   if(b.dataset.feedtype){state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
+  if(b.id==='feedSwipeToggle'){state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedLabels=true; state.feedLabelActions=0;} render(); return}
+  if(b.dataset.feedbtn){feedAction(b.dataset.feedbtn==='collapse'?'up':b.dataset.feedbtn); return}
   if(b.id==='feedBackBtn'){return go('opps')}
   if(b.id==='feedBackFloatBtn'){return go('opps')}
   if(b.id==='feedCollapseBtn'){state.feedExpanded=false; render(); return}
@@ -1204,12 +1246,13 @@ document.addEventListener('click',e=>{ if(e.target.id==='overlay') closePopup();
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&$('popupRoot').innerHTML){closePopup(); return}
   /* Feed arrow keys (desktops): same four actions as swipe and tap.
-     Only on the feed screen, never while a popup is open, and never
-     while focus sits on an interactive control: a button, select,
-     input, textarea, or editable element keeps its own arrow keys
-     (the filter selects above all). The keys act only when the
-     feed itself has focus (the card or the page body). */
-  if(state.screen==='feed'&&e.key.startsWith('Arrow')&&!$('popupRoot').innerHTML){
+     Only on the feed screen in swipe mode, never while a popup is
+     open, and never while focus sits on an interactive control:
+     a button, select, input, textarea, or editable element keeps
+     its own arrow keys (the filter selects above all). The keys
+     act only when the feed itself has focus (the card or the
+     page body). */
+  if(state.screen==='feed'&&state.feedSwipe&&e.key.startsWith('Arrow')&&!$('popupRoot').innerHTML){
     const ae=document.activeElement;
     const onControl=ae&&(['BUTTON','SELECT','INPUT','TEXTAREA'].includes(ae.tagName)||ae.isContentEditable);
     if(!onControl){
