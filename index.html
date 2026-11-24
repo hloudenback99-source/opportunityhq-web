@@ -138,7 +138,6 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 @keyframes cardin{from{opacity:0; transform:scale(.96)}to{opacity:1; transform:scale(1)}}
 @media (prefers-reduced-motion: reduce){
   .feedcard{animation:none}
-  .feedlabel{animation:none}
 }
 .feedfx{position:fixed; inset:0; pointer-events:none; z-index:60; overflow:hidden}
 .feedp{position:absolute; border-radius:50%}
@@ -152,13 +151,25 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 .feedwrap{position:relative; width:min(480px,100%)}
 .feedwrap.enter{animation:rise .38s ease both}
 .feedstage{position:relative; margin:40px 0}
-.feedlabel{
+/* Card-pull demo text (Hayden, 2026-11-23): while the demo pulls
+   the card toward a direction, this bare floating text names what
+   that direction does, on the side the card is pulled toward.
+   No container, no background, no border: readability is a soft
+   text-shadow, exactly like the labels it replaces. The demo
+   engine drives visibility through the .show class, fading the
+   text in with the pull and out as the card returns. */
+.feeddemo{
   position:absolute; z-index:2; pointer-events:none; white-space:nowrap;
-  color:var(--ink); font-size:32px; line-height:1; font-weight:650;
+  color:var(--ink); font-size:18px; font-weight:650; opacity:0;
   text-shadow:0 1px 10px rgba(0,0,0,.7), 0 0 3px rgba(0,0,0,.5);
-  animation:feedlabelpulse 2.9s ease-in-out infinite alternate;
+  transition:opacity .25s ease;
 }
-@keyframes feedlabelpulse{from{opacity:.45; filter:blur(1.6px)}to{opacity:1; filter:blur(0)}}
+.feeddemo.show{opacity:1}
+.feeddemo.up{left:50%; transform:translateX(-50%); bottom:calc(100% + 12px)}
+.feeddemo.down{left:50%; transform:translateX(-50%); top:calc(100% + 12px)}
+.feeddemo.left{right:calc(100% + 12px); top:50%; transform:translateY(-50%)}
+.feeddemo.right{left:calc(100% + 12px); top:50%; transform:translateY(-50%)}
+.sr-only{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
 .feed-back-float{
   position:fixed; left:16px; bottom:16px; z-index:40;
   min-height:52px; padding:14px 22px; border-radius:999px;
@@ -167,10 +178,6 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
   font-size:17px; font-weight:700;
   box-shadow:0 14px 34px rgba(0,0,0,.45);
 }
-.feedlabel.up{left:50%; transform:translateX(-50%); bottom:calc(100% + 10px)}
-.feedlabel.down{left:50%; transform:translateX(-50%); top:calc(100% + 10px)}
-.feedlabel.left{right:calc(100% + 10px); top:50%; transform:translateY(-50%)}
-.feedlabel.right{left:calc(100% + 10px); top:50%; transform:translateY(-50%)}
 .feedzone{position:fixed; z-index:1; cursor:pointer}
 .feedbtns{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
 .feedbtn{
@@ -223,8 +230,8 @@ const state={
   lastSearch:'',
   county:null, oppView:null, selected:null, savedMsg:false,
   feedStatus:'all', feedStrength:'all', feedType:'all', feedArea:'all', feedIndex:0,
-  feedExpanded:false, feedBusy:false, feedErr:'', feedLabels:true,
-  feedLabelActions:0, feedSwipeAt:0, feedSwipe:true,
+  feedExpanded:false, feedBusy:false, feedErr:'', feedDemo:true,
+  feedDemoActions:0, feedSwipeAt:0, feedSwipe:true,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
 };
 const $=id=>document.getElementById(id);
@@ -552,24 +559,53 @@ function vList(){
    up = next, down = expand, right = approve, left = archive.
    A Swipe mode toggle in the filter row (state.feedSwipe, default
    on) turns ALL directional input off: no drag, no tap zones, no
-   arrow keys, no labels. The card then carries the four actions
+   arrow keys, no demo. The card then carries the four actions
    as buttons (Next, Approve, Archive, More info) through the same
    feedAction dispatcher. */
-/* Directional instruction labels (Hayden, 2026-11-23): four
-   emoji-arrow labels float off the sides of the lead card, slowly
-   pulsating between blurred/translucent and opaque/sharp while
-   in view. They are visible when the
-   feed opens, hide once FEED_LABEL_HIDE_AFTER directional actions
-   (swipe, tap zone, or arrow key, any mix) have been registered
-   since they were shown, and reappear after FEED_LABEL_IDLE_MS
-   with no activity at all: no directional action, no expand or
-   collapse, no filter change. Every one of those re-renders the
-   feed, and vFeed re-arms the idle timer on each render, so the
-   timer measures true inactivity. While the card is expanded the
-   labels stay hidden; the idle rules resume on collapse. */
-const FEED_LABEL_HIDE_AFTER=3;
-const FEED_LABEL_IDLE_MS=6000;
+/* Card-pull demo (Hayden, 2026-11-23, replacing the emoji arrow
+   labels shipped earlier the same day): instead of static labels,
+   the card itself is pulled SLIGHTLY toward one direction at a
+   time, in a paced loop (up, right, down, left), and a bare
+   floating text naming that direction's action pops up on the
+   side the card is pulled toward: up "Next lead", right
+   "Approve", down "More info", left "Archive". Only one
+   description is visible at a time. The demo runs under the same
+   visibility rules the labels had: it starts when the feed opens
+   (after the card's entrance settles), stops for the session
+   window once FEED_DEMO_HIDE_AFTER directional actions (swipe,
+   tap zone, or arrow key, any mix) have been registered, and
+   restarts after FEED_DEMO_IDLE_MS with no activity at all: no
+   directional action, no expand or collapse, no filter change.
+   Every one of those re-renders the feed, and vFeed re-arms the
+   idle timer on each render, so the timer measures true
+   inactivity. The demo never runs while the card is expanded, in
+   the caught-up state, in swipe mode off, or under reduced
+   motion. Conflict safety: the demo drives the card's transform
+   and so does drag, so a pointerdown on the card stops the demo
+   on the spot (its transform and timers clear before the drag
+   wiring takes over) and the demo engine never applies a
+   transform while a drag is active; a drag-paused demo may
+   resume under the idle rules above. */
+const FEED_DEMO_HIDE_AFTER=3;
+const FEED_DEMO_IDLE_MS=6000;
+const FEED_DEMO_START_MS=400;
+const FEED_DEMO_PULL_PX=22;
+const FEED_DEMO_PULL_MS=450;
+const FEED_DEMO_HOLD_MS=600;
+const FEED_DEMO_RETURN_MS=350;
+const FEED_DEMO_PAUSE_MS=500;
+const FEED_DEMO_STEPS=Object.freeze([
+  {dir:'up', cls:'up', text:'Next lead', x:0, y:-FEED_DEMO_PULL_PX, rot:0},
+  {dir:'approve', cls:'right', text:'Approve', x:FEED_DEMO_PULL_PX, y:0, rot:3},
+  {dir:'down', cls:'down', text:'More info', x:0, y:FEED_DEMO_PULL_PX, rot:0},
+  {dir:'archive', cls:'left', text:'Archive', x:-FEED_DEMO_PULL_PX, y:0, rot:-3},
+]);
 let feedIdleTimer=null;
+let feedDemoTimer=null;
+let feedDemoStep=0;
+let feedDemoActive=false;
+let feedDemoApplied=false;
+let feedDragActive=false;
 function feedQueue(){
   let ls=leads().filter(l=>l.status==='new');
   if(state.feedStatus==='hot') ls=ls.filter(fresh);
@@ -586,32 +622,89 @@ const feedCurrent=()=>feedQueue()[state.feedIndex]||null;
    behave normally; re-entering re-applies the preset. */
 function openFeed(preset){
   state.feedStatus=preset==='hot'?'hot':'all'; state.feedIndex=0; state.feedExpanded=false;
-  state.feedErr=''; state.feedLabels=true; state.feedLabelActions=0;
+  state.feedErr=''; state.feedDemo=true; state.feedDemoActions=0;
   go('feed');
 }
 function clearFeedIdle(){ if(feedIdleTimer){ clearTimeout(feedIdleTimer); feedIdleTimer=null; } }
 /* Arm the 6-second idle timer. Called at the end of every feed
-   render, so any activity that re-renders pushes the reappearance
-   out by a full idle window. On firing, the labels come back and
-   the action counter resets, so another 3 actions hide them. */
+   render, so any activity that re-renders pushes the restart out
+   by a full idle window. On firing, a demo hidden by the action
+   threshold comes back (counter reset, so another 3 actions hide
+   it), and a demo merely paused by a drag resumes in place. */
 function armFeedIdle(){
   clearFeedIdle();
   if(state.screen!=='feed') return;
   if(!state.feedSwipe) return;
   feedIdleTimer=setTimeout(()=>{ feedIdleTimer=null;
-    if(state.screen==='feed'&&!state.feedLabels&&!state.feedExpanded&&feedCurrent()){
-      state.feedLabels=true; state.feedLabelActions=0; render();
-    } },FEED_LABEL_IDLE_MS);
+    if(state.screen==='feed'&&!state.feedDemo&&!state.feedExpanded&&feedCurrent()){
+      state.feedDemo=true; state.feedDemoActions=0; render();
+    } else if(state.screen==='feed'&&state.feedDemo&&!feedDemoActive&&!state.feedExpanded&&feedCurrent()){
+      startFeedDemo();
+    } },FEED_DEMO_IDLE_MS);
+}
+/* The demo may run only on a live, unexpanded feed card in swipe
+   mode, before the hide threshold, and never under reduced
+   motion: no card movement, no popups; actions still register. */
+function feedDemoWanted(){
+  return state.screen==='feed'&&state.feedSwipe&&state.feedDemo&&!state.feedExpanded&&!!feedCurrent()&&!REDUCED_MOTION();
+}
+/* Stop the demo completely: timers cleared, and if the demo had
+   pulled the card, its transform is cleared too (only then, so a
+   drag fly-off already in flight is never snapped back). The
+   floating description fades out. */
+function stopFeedDemo(){
+  if(feedDemoTimer){ clearTimeout(feedDemoTimer); feedDemoTimer=null; }
+  feedDemoActive=false;
+  if(feedDemoApplied){
+    feedDemoApplied=false;
+    const card=$('feedCard');
+    if(card){ card.style.transition=''; card.style.transform=''; card.style.opacity=''; }
+  }
+  const tip=$('feedDemoTip');
+  if(tip) tip.classList.remove('show');
+}
+function startFeedDemo(){
+  stopFeedDemo();
+  if(!feedDemoWanted()||feedDragActive) return;
+  feedDemoActive=true; feedDemoStep=0;
+  feedDemoTimer=setTimeout(feedDemoPull,FEED_DEMO_START_MS);
+}
+/* One demo beat: pull the card slightly toward the step's
+   direction while its description pops up on that side, hold,
+   then ease back to center and fade the text (feedDemoReturn). */
+function feedDemoPull(){
+  feedDemoTimer=null;
+  if(!feedDemoActive||feedDragActive||!feedDemoWanted()){ feedDemoActive=false; return; }
+  const card=$('feedCard'); const tip=$('feedDemoTip');
+  if(!card||!tip){ stopFeedDemo(); return; }
+  const s=FEED_DEMO_STEPS[feedDemoStep%FEED_DEMO_STEPS.length];
+  tip.textContent=s.text;
+  tip.className='feeddemo '+s.cls+' show';
+  card.style.transition=`transform ${FEED_DEMO_PULL_MS}ms ease-out`;
+  card.style.transform=`translate(${s.x}px,${s.y}px) rotate(${s.rot}deg)`;
+  feedDemoApplied=true;
+  feedDemoTimer=setTimeout(feedDemoReturn,FEED_DEMO_PULL_MS+FEED_DEMO_HOLD_MS);
+}
+function feedDemoReturn(){
+  feedDemoTimer=null;
+  if(!feedDemoActive) return;
+  const card=$('feedCard'); const tip=$('feedDemoTip');
+  if(tip) tip.classList.remove('show');
+  if(card){ card.style.transition=`transform ${FEED_DEMO_RETURN_MS}ms ease-in-out`; card.style.transform=''; }
+  feedDemoApplied=false;
+  feedDemoStep++;
+  feedDemoTimer=setTimeout(feedDemoPull,FEED_DEMO_RETURN_MS+FEED_DEMO_PAUSE_MS);
 }
 /* One directional action (swipe, tap zone, or arrow key) through
-   feedAction: count it, and hide the labels at the threshold. */
+   feedAction: count it, and stop the demo at the threshold. */
 function noteFeedDirectional(){
-  state.feedLabelActions++;
-  if(state.feedLabelActions>=FEED_LABEL_HIDE_AFTER) state.feedLabels=false;
+  state.feedDemoActions++;
+  if(state.feedDemoActions>=FEED_DEMO_HIDE_AFTER){ state.feedDemo=false; stopFeedDemo(); }
 }
 function stopFeedChrome(){
   clearFeedZones();
   clearFeedIdle();
+  stopFeedDemo();
 }
 function feedUp(){
   if(state.feedBusy) return;
@@ -709,7 +802,11 @@ function feedParticles(dir){
    it cannot also fire a card button. Gesture isolation: a press
    that starts on an interactive element (a button, a select, a
    field, a link, anything marked data-nogesture) never starts a
-   drag at all, so controls keep their own behavior. */
+   drag at all, so controls keep their own behavior. The card-pull
+   demo drives the same transform: a press on the card stops the
+   demo before the drag takes over (stopFeedDemo clears its
+   transform and timers), feedDragActive marks the drag for the
+   demo engine, and the demo may resume under the idle rules. */
 function wireFeedCard(){
   const card=$('feedCard'); if(!card) return;
   let sx=0, sy=0, dx=0, dy=0, pid=null;
@@ -727,6 +824,7 @@ function wireFeedCard(){
   const onUp=e=>{
     if(pid===null||e.pointerId!==pid) return;
     pid=null;
+    feedDragActive=false;
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
     const ax=Math.abs(dx), ay=Math.abs(dy);
@@ -744,6 +842,8 @@ function wireFeedCard(){
   card.addEventListener('pointerdown',e=>{
     if(e.target.closest('button,select,input,textarea,a,[data-nogesture]')) return;
     if(state.feedBusy||pid!==null) return;
+    stopFeedDemo();
+    feedDragActive=true;
     pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0; dy=0;
     card.style.transition='none';
     document.addEventListener('pointermove',onMove);
@@ -863,18 +963,26 @@ function vFeed(){
       <div class="feedmeta">${esc(l.area)} · ${typeLabel(l)}</div>
       ${amt?`<div class="feedamount">${esc(amt)}</div>`:''}
       <div class="feedmeta">Posted ${esc(postedLabel(l))}</div>${state.feedSwipe?'':feedCardBtns()}</div>`;
-  const labels=state.feedSwipe&&state.feedLabels&&!state.feedExpanded
-    ? `<div class="feedlabels"><span class="feedlabel up" role="img" aria-label="Swipe up for next lead" title="Swipe up: next lead">⬆️</span><span class="feedlabel down" role="img" aria-label="Swipe down for more info" title="Swipe down: more info">⬇️</span><span class="feedlabel right" role="img" aria-label="Swipe right to approve" title="Swipe right: approve">➡️</span><span class="feedlabel left" role="img" aria-label="Swipe left to archive" title="Swipe left: archive">⬅️</span></div>`:'';
+  /* The demo tip: one bare floating text element the demo engine
+     positions and fills per step (see FEED_DEMO_STEPS). It renders
+     empty and invisible; the engine drives it. The visually
+     hidden line names the four gestures for assistive tech, now
+     that no visible labels remain. Both exist only in swipe mode;
+     in button mode the card's buttons name themselves. */
+  const demo=state.feedSwipe
+    ? `<div class="feeddemo" id="feedDemoTip" aria-hidden="true"></div><span class="sr-only">Swipe up for next lead, down for more info, right to approve, left to archive.</span>`:'';
   bare(`<h1 class="title">${title}</h1>${filters}
   <div class="feedpos">${state.feedIndex+1} of ${q.length} · ${q.length-state.feedIndex-1} left</div>
-  <div class="feedstage">${card}${labels}</div>
+  <div class="feedstage">${card}${demo}</div>
   ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}`, cornersFeed(), true);
   if(state.feedSwipe){
     wireFeedCard();
     buildFeedZones();
     armFeedIdle();
+    startFeedDemo();
   }else{
     clearFeedIdle();
+    stopFeedDemo();
   }
 }
 function nextStep(l){
@@ -1162,7 +1270,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.feed){openFeed(b.dataset.feed); return}
   if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
   if(b.dataset.feedtype){state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
-  if(b.id==='feedSwipeToggle'){state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedLabels=true; state.feedLabelActions=0;} render(); return}
+  if(b.id==='feedSwipeToggle'){state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedDemo=true; state.feedDemoActions=0;} render(); return}
   if(b.dataset.feedbtn){feedAction(b.dataset.feedbtn==='collapse'?'up':b.dataset.feedbtn); return}
   if(b.id==='feedBackBtn'){return go('opps')}
   if(b.id==='feedBackFloatBtn'){return go('opps')}
