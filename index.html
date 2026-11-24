@@ -14,6 +14,11 @@
   --ink:#f4f7fd; --muted:#9db0c6; --cyan:#1fe2ff; --gold:#d7b36a;
   --card:rgba(16,24,39,.92); --line:rgba(120,160,190,.22);
   --btn:#16233a; --btn2:#1a2c47;
+  /* Directional edge glow colors (Hayden, 2026-11-24): approve
+     (right) green, archive (left) red, more info (down) purple,
+     next lead (up) the standard HW electric neon blue, which is
+     the --cyan accent. */
+  --glow-up:#1fe2ff; --glow-approve:#3ddc84; --glow-archive:#ff5252; --glow-down:#b388ff;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -179,6 +184,36 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
   box-shadow:0 14px 34px rgba(0,0,0,.45);
 }
 .feedzone{position:fixed; z-index:1; cursor:pointer}
+/* Directional edge glow (Hayden, 2026-11-24): one soft gradient
+   strip per screen edge, bleeding inward about 140px, lit by
+   feedGlow() while the card is dragged, pulsed by
+   feedGlowPulse() on tap-zone and arrow-key actions, and lit by
+   the demo on its pulled side. Intensity is the element opacity,
+   driven inline. The rgba stops below are the --glow-* variables
+   at the top of this sheet (up = --glow-up, right = --glow-approve,
+   down = --glow-down, left = --glow-archive). pointer-events:none
+   and z-index below the popups, so the glow can never block or
+   cover an interaction. */
+.feedglow{position:fixed; z-index:2; pointer-events:none; opacity:0; transition:opacity .2s ease}
+.feedglow.up{top:0; left:0; right:0; height:140px; background:linear-gradient(180deg, rgba(31,226,255,.55), rgba(31,226,255,0))}
+.feedglow.right{top:0; bottom:0; right:0; width:140px; background:linear-gradient(270deg, rgba(61,220,132,.55), rgba(61,220,132,0))}
+.feedglow.down{bottom:0; left:0; right:0; height:140px; background:linear-gradient(0deg, rgba(179,136,255,.55), rgba(179,136,255,0))}
+.feedglow.left{top:0; bottom:0; left:0; width:140px; background:linear-gradient(90deg, rgba(255,82,82,.55), rgba(255,82,82,0))}
+/* Footer instruction hint (Hayden, 2026-11-24): one floating
+   sentence at the bottom center of the feed screen, clear of the
+   Back float (bottom-left) and the Concierge float
+   (bottom-right). The container takes NO pointer events, so taps
+   pass straight through it to the down tap zone beneath; only
+   the small "turn off" subtext is interactive (pointer-events
+   restored on it alone), and the hint stacks above the tap zones
+   (z-index 1), so a tap on the subtext spotlights the toggle
+   instead of triggering the down action. */
+.feedhint{position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:30; text-align:center; pointer-events:none}
+.feedhint-main{font-size:16px; font-weight:650; color:var(--ink); white-space:nowrap; text-shadow:0 1px 10px rgba(0,0,0,.7), 0 0 3px rgba(0,0,0,.5)}
+.feedhint-off{pointer-events:auto; background:none; border:0; padding:6px 12px; color:var(--muted); font-size:13px; font-weight:600; text-decoration:underline; text-underline-offset:3px; cursor:pointer}
+/* The gold spotlight the "turn off" subtext puts on the Swipe
+   mode toggle so the user can find it. */
+#feedSwipeToggle.toggle-highlight{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 2px var(--gold), 0 0 20px 5px rgba(215,179,106,.8)}
 .feedbtns{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px}
 .feedbtn{
   min-height:48px; padding:12px 10px; text-align:center;
@@ -199,6 +234,8 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 <body>
 <main class="panel enter" id="panel" aria-live="polite"></main>
 <div id="feedBackRoot"></div>
+<div id="feedGlowRoot"></div>
+<div id="feedHintRoot"></div>
 <div id="conciergeRoot"></div>
 <div id="popupRoot"></div>
 
@@ -388,6 +425,8 @@ function panel(html,cornersHtml,concierge){
   $('panel').innerHTML=html+(cornersHtml||'');
   renderConcierge(concierge);
   renderFeedBack(false);
+  renderFeedGlow(false);
+  renderFeedHint(false);
 }
 /* The feed screens render WITHOUT the outer panel box (Hayden,
    2026-11-23): the lead card, the filters, and the position
@@ -398,6 +437,8 @@ function bare(html,cornersHtml,concierge){
   $('panel').innerHTML=html+(cornersHtml||'');
   renderConcierge(concierge);
   renderFeedBack(true);
+  renderFeedGlow(true);
+  renderFeedHint(true);
 }
 /* Feed Back control (Hayden, 2026-11-23): on the feed screens the
    Back button leaves the top-left corner and floats at the
@@ -408,6 +449,42 @@ function bare(html,cornersHtml,concierge){
 function renderFeedBack(show){
   const root=$('feedBackRoot'); if(!root) return;
   root.innerHTML=show?`<button class="feed-back-float" id="feedBackFloatBtn">← Back</button>`:'';
+}
+/* Directional edge glow layer (Hayden, 2026-11-24): the four
+   fixed gradient strips, one per screen edge, rendered only on
+   the feed screens (bare shows them, panel clears them, the same
+   gate as the feed Back float). feedGlow() drives their opacity;
+   the elements themselves are inert (pointer-events:none). */
+function renderFeedGlow(show){
+  const root=$('feedGlowRoot'); if(!root) return;
+  root.innerHTML=show?`<div class="feedglow up" id="feedGlowUp"></div><div class="feedglow right" id="feedGlowRight"></div><div class="feedglow down" id="feedGlowDown"></div><div class="feedglow left" id="feedGlowLeft"></div>`:'';
+}
+/* Footer instruction hint (Hayden, 2026-11-24): on the feed in
+   swipe mode only, one floating sentence at the bottom center:
+   "Swipe, drag, or tap the lead." with a smaller "turn off"
+   subtext beneath it. The subtext never switches the mode; it
+   only spotlights the Swipe mode toggle in the filter row with a
+   gold glow, so the user can find the control that does. Hover
+   holds the spotlight while hovered; a tap or click pulses it
+   for FEED_HINT_PULSE_MS. */
+function renderFeedHint(show){
+  const root=$('feedHintRoot'); if(!root) return;
+  root.innerHTML=show&&state.feedSwipe?`<div class="feedhint"><div class="feedhint-main">Swipe, drag, or tap the lead.</div><button class="feedhint-off" id="feedHintOff" type="button" aria-label="Show me the swipe mode toggle">turn off</button></div>`:'';
+}
+const FEED_HINT_PULSE_MS=2000;
+let feedHintTimer=null;
+function setToggleHighlight(on){
+  const t=$('feedSwipeToggle'); if(t) t.classList.toggle('toggle-highlight',!!on);
+}
+function pulseToggleHighlight(){
+  setToggleHighlight(true);
+  if(feedHintTimer) clearTimeout(feedHintTimer);
+  feedHintTimer=setTimeout(()=>{ feedHintTimer=null; setToggleHighlight(false); },FEED_HINT_PULSE_MS);
+}
+function wireFeedHint(){
+  const el=$('feedHintOff'); if(!el) return;
+  el.addEventListener('mouseenter',()=>{ if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; } setToggleHighlight(true); });
+  el.addEventListener('mouseleave',()=>setToggleHighlight(false));
 }
 /* Feed corners: Help only. The feed's Back is the bottom-left
    float above, so the feed renders no top-left corner back. */
@@ -561,7 +638,13 @@ function vList(){
    on) turns ALL directional input off: no drag, no tap zones, no
    arrow keys, no demo. The card then carries the four actions
    as buttons (Next, Approve, Archive, More info) through the same
-   feedAction dispatcher. */
+   feedAction dispatcher.
+   Directional edge glow and a footer instruction hint (Hayden,
+   2026-11-24): the screen edge toward the active direction glows
+   in that direction's color, with intensity following the card's
+   rendered distance toward the edge (see the glow engine below),
+   and a floating footer sentence teaches the gesture while its
+   "turn off" subtext spotlights the Swipe mode toggle. */
 /* Card-pull demo (Hayden, 2026-11-23, replacing the emoji arrow
    labels shipped earlier the same day): instead of static labels,
    the card itself is pulled toward one direction at a time, in a
@@ -668,6 +751,7 @@ function stopFeedDemo(){
   }
   const tip=$('feedDemoTip');
   if(tip) tip.classList.remove('show');
+  feedGlowClear();
 }
 function startFeedDemo(){
   stopFeedDemo();
@@ -688,6 +772,11 @@ function feedDemoPull(){
   tip.className='feeddemo '+s.cls+' show';
   card.style.transition=`transform ${FEED_DEMO_PULL_MS}ms cubic-bezier(.22,1.36,.36,1)`;
   card.style.transform=`translate(${s.x}px,${s.y}px) rotate(${s.rot}deg)`;
+  /* The pulled edge glows at the intensity the pull distance
+     earns through the same mapping the drag uses (36px of pull
+     is a moderate glow), synced with the pull; feedDemoReturn
+     clears it as the card comes back. */
+  feedGlow(s.dir, glowIntensity(Math.max(Math.abs(s.x),Math.abs(s.y))));
   feedDemoApplied=true;
   feedDemoTimer=setTimeout(feedDemoReturn,FEED_DEMO_PULL_MS+FEED_DEMO_HOLD_MS);
 }
@@ -696,6 +785,7 @@ function feedDemoReturn(){
   if(!feedDemoActive) return;
   const card=$('feedCard'); const tip=$('feedDemoTip');
   if(tip) tip.classList.remove('show');
+  feedGlowClear();
   if(card){ card.style.transition=`transform ${FEED_DEMO_RETURN_MS}ms cubic-bezier(.34,1.3,.64,1)`; card.style.transform=''; }
   feedDemoApplied=false;
   feedDemoStep++;
@@ -711,6 +801,7 @@ function stopFeedChrome(){
   clearFeedZones();
   clearFeedIdle();
   stopFeedDemo();
+  feedGlowClear();
 }
 function feedUp(){
   if(state.feedBusy) return;
@@ -728,6 +819,7 @@ function feedAction(name){
   if($('popupRoot').innerHTML) return;
   noteFeedDirectional();
   feedParticles(name);
+  feedGlowPulse(name);
   ({up:feedUp, down:feedDown, approve:feedApprove, archive:feedArchive})[name]?.();
 }
 /* Approve and archive are ordinary status commands through the exact
@@ -796,6 +888,49 @@ function feedParticles(dir){
   }
   document.body.appendChild(layer);
   setTimeout(()=>layer.remove(),1000);
+}
+/* Directional edge glow engine (Hayden, 2026-11-24): one helper
+   set drives every directional feedback moment, so drag, tap
+   zones, arrow keys, and the demo all light the screen the same
+   way. feedGlow(dir, intensity) lights one edge (and only one)
+   at the given opacity; feedGlowPulse(dir) flashes an edge for a
+   tap-zone tap or an arrow key (rise to FEED_GLOW_PULSE_PEAK,
+   gone by FEED_GLOW_PULSE_MS); feedGlowClear() puts every edge
+   out and cancels any pulse in flight. The intensity mapping is
+   pure: 0 at rest, ramping with the RENDERED (magnet-adjusted)
+   displacement magnitude, full at FEED_MAGNET_FULL (the
+   magnet-full distance, 64px) and holding beyond. The glow is
+   opacity feedback, not motion, so it stays on under reduced
+   motion, drags included; the pulse is swipe-mode only because
+   button mode has no directional decisions to confirm. */
+const FEED_GLOW_PULSE_MS=450;
+const FEED_GLOW_PULSE_PEAK=0.85;
+const FEED_GLOW_SIDES=Object.freeze({up:'Up',approve:'Right',down:'Down',archive:'Left'});
+function glowIntensity(magnitude){
+  return Math.min(1,(Math.abs(magnitude)||0)/FEED_MAGNET_FULL);
+}
+function feedGlowEl(dir){ const suffix=FEED_GLOW_SIDES[dir]; return suffix?$('feedGlow'+suffix):null; }
+function feedGlow(dir,intensity){
+  for(const d of Object.keys(FEED_GLOW_SIDES)){
+    const el=feedGlowEl(d); if(!el) continue;
+    if(d===dir) el.getAnimations().forEach(a=>a.cancel());
+    el.style.opacity=d===dir?String(Math.max(0,Math.min(1,intensity))):'0';
+  }
+}
+function feedGlowClear(){
+  const root=$('feedGlowRoot'); if(!root) return;
+  root.querySelectorAll('.feedglow').forEach(el=>{ el.getAnimations().forEach(a=>a.cancel()); el.style.opacity='0'; });
+}
+function feedGlowPulse(dir){
+  if(!state.feedSwipe) return;
+  const el=feedGlowEl(dir); if(!el) return;
+  feedGlow(null,0);
+  el.getAnimations().forEach(a=>a.cancel());
+  el.animate([
+    {opacity:0},
+    {opacity:FEED_GLOW_PULSE_PEAK, offset:0.3},
+    {opacity:0},
+  ],{duration:FEED_GLOW_PULSE_MS, easing:'ease-out'});
 }
 /* Magnetic drag physics (Hayden, 2026-11-23): like the Hello
    element on the Client Hub screen, the card does not track the
@@ -868,6 +1003,17 @@ function wireFeedCard(){
   const paintDrag=()=>{
     const rot=Math.max(-6,Math.min(6,rx/18));
     card.style.transform=`translate(${rx}px,${ry}px) rotate(${rot}deg)`;
+    /* Edge glow tracks the rendered position from inside the
+       chase loop, so it moves as smoothly as the card: the
+       dominant axis of the RENDERED displacement picks the side
+       (the same direction logic the release uses), and the
+       rendered magnitude along it sets the intensity through
+       glowIntensity(). Reduced motion paints through here too,
+       so its drags glow as well. */
+    const ax=Math.abs(rx), ay=Math.abs(ry);
+    if(Math.max(ax,ay)<1){ feedGlow(null,0); return; }
+    const dir=ax>ay?(rx>0?'approve':'archive'):(ry<0?'up':'down');
+    feedGlow(dir, glowIntensity(Math.max(ax,ay)));
   };
   const chaseStep=()=>{
     chaseRaf=null;
@@ -896,6 +1042,7 @@ function wireFeedCard(){
     pid=null;
     feedDragActive=false;
     chaseStop();
+    feedGlowClear();
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
     const ax=Math.abs(dx), ay=Math.abs(dy);
@@ -914,6 +1061,7 @@ function wireFeedCard(){
     if(e.target.closest('button,select,input,textarea,a,[data-nogesture]')) return;
     if(state.feedBusy||pid!==null) return;
     stopFeedDemo();
+    feedGlowClear();
     feedDragActive=true;
     pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0; dy=0; rx=0; ry=0;
     card.style.transition='none';
@@ -1051,6 +1199,7 @@ function vFeed(){
     buildFeedZones();
     armFeedIdle();
     startFeedDemo();
+    wireFeedHint();
   }else{
     clearFeedIdle();
     stopFeedDemo();
@@ -1342,6 +1491,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
   if(b.dataset.feedtype){state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
   if(b.id==='feedSwipeToggle'){state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedDemo=true; state.feedDemoActions=0;} render(); return}
+  if(b.id==='feedHintOff'){pulseToggleHighlight(); return}
   if(b.dataset.feedbtn){feedAction(b.dataset.feedbtn==='collapse'?'up':b.dataset.feedbtn); return}
   if(b.id==='feedBackBtn'){return go('opps')}
   if(b.id==='feedBackFloatBtn'){return go('opps')}
