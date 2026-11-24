@@ -126,7 +126,9 @@ button.row:hover{border-color:rgba(31,226,255,.55)}
   border:1px solid var(--line); color:var(--ink); font-size:15px; font-weight:600;
 }
 .chip.on{border-color:var(--cyan); color:var(--cyan); font-weight:750}
-select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
+.feedfilters{display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:8px; margin-bottom:12px}
+.feedfilters .chip{min-height:36px; padding:6px 12px; font-size:14px}
+select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0; font-size:14px; border-radius:12px}
 .feedpos{text-align:center; color:var(--muted); font-size:15px; font-weight:650; margin-bottom:12px}
 .feedcard{
   background:rgba(22,35,58,.55); border:1px solid var(--line); border-radius:22px;
@@ -136,6 +138,7 @@ select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
 @keyframes cardin{from{opacity:0; transform:scale(.96)}to{opacity:1; transform:scale(1)}}
 @media (prefers-reduced-motion: reduce){
   .feedcard{animation:none}
+  .feedlabel{animation:none}
 }
 .feedfx{position:fixed; inset:0; pointer-events:none; z-index:60; overflow:hidden}
 .feedp{position:absolute; border-radius:50%}
@@ -151,8 +154,18 @@ select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
 .feedstage{position:relative; margin:40px 0}
 .feedlabel{
   position:absolute; z-index:2; pointer-events:none; white-space:nowrap;
-  background:rgba(22,35,58,.88); border:1px solid var(--line); color:var(--muted);
-  font-size:14px; font-weight:650; padding:7px 13px; border-radius:999px;
+  color:var(--ink); font-size:14px; font-weight:650;
+  text-shadow:0 1px 10px rgba(0,0,0,.7), 0 0 3px rgba(0,0,0,.5);
+  animation:feedlabelpulse 2.9s ease-in-out infinite alternate;
+}
+@keyframes feedlabelpulse{from{opacity:.45; filter:blur(1.6px)}to{opacity:1; filter:blur(0)}}
+.feed-back-float{
+  position:fixed; left:16px; bottom:16px; z-index:40;
+  min-height:52px; padding:14px 22px; border-radius:999px;
+  background:linear-gradient(180deg,var(--btn2),var(--btn)); color:var(--ink);
+  border:1px solid var(--line);
+  font-size:17px; font-weight:700;
+  box-shadow:0 14px 34px rgba(0,0,0,.45);
 }
 .feedlabel.up{left:50%; transform:translateX(-50%); bottom:calc(100% + 10px)}
 .feedlabel.down{left:50%; transform:translateX(-50%); top:calc(100% + 10px)}
@@ -170,6 +183,7 @@ select.field.feedarea{min-height:50px; padding:10px 14px; font-size:16px}
 </head>
 <body>
 <main class="panel enter" id="panel" aria-live="polite"></main>
+<div id="feedBackRoot"></div>
 <div id="conciergeRoot"></div>
 <div id="popupRoot"></div>
 
@@ -200,7 +214,7 @@ const state={
   lastInsightsView:null,
   lastSearch:'',
   county:null, oppView:null, selected:null, savedMsg:false,
-  feedMode:'all', feedType:'all', feedArea:'all', feedIndex:0,
+  feedStatus:'all', feedStrength:'all', feedType:'all', feedArea:'all', feedIndex:0,
   feedExpanded:false, feedBusy:false, feedErr:'', feedLabels:true,
   feedLabelActions:0, feedSwipeAt:0,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
@@ -358,6 +372,7 @@ function panel(html,cornersHtml,concierge){
   $('panel').className='panel enter'+(cornersHtml?' with-corners':'');
   $('panel').innerHTML=html+(cornersHtml||'');
   renderConcierge(concierge);
+  renderFeedBack(false);
 }
 /* The feed screens render WITHOUT the outer panel box (Hayden,
    2026-11-23): the lead card, the filters, and the position
@@ -367,7 +382,21 @@ function bare(html,cornersHtml,concierge){
   $('panel').className='feedwrap enter';
   $('panel').innerHTML=html+(cornersHtml||'');
   renderConcierge(concierge);
+  renderFeedBack(true);
 }
+/* Feed Back control (Hayden, 2026-11-23): on the feed screens the
+   Back button leaves the top-left corner and floats at the
+   bottom-left of the viewport instead, mirroring the Concierge
+   float at bottom-right. bare() (feed only) shows it; panel()
+   clears it, so no other screen ever carries it. It returns to
+   the Opportunities menu, like the corner back it replaces. */
+function renderFeedBack(show){
+  const root=$('feedBackRoot'); if(!root) return;
+  root.innerHTML=show?`<button class="feed-back-float" id="feedBackFloatBtn">← Back</button>`:'';
+}
+/* Feed corners: Help only. The feed's Back is the bottom-left
+   float above, so the feed renders no top-left corner back. */
+function cornersFeed(){ return `<button class="helpbtn" data-nav="help" aria-label="Help">?</button>`; }
 /* Concierge entry (Hayden, 2026-11-23, synonymous with ClientHub):
    a floating button fixed to the bottom-right of the viewport,
    labelled with the chat-bubble glyph, on signed-in views only.
@@ -513,8 +542,10 @@ function vList(){
    'new'), hot leads first, then strongest. Four directions, one set
    of action functions shared by swipe, tap zones, and arrow keys:
    up = next, down = expand, right = approve, left = archive. */
-/* Directional instruction labels (Hayden, 2026-11-23): four pills
-   float off the sides of the lead card. They are visible when the
+/* Directional instruction labels (Hayden, 2026-11-23): four
+   bare-text labels float off the sides of the lead card, slowly
+   pulsating between blurred/translucent and opaque/sharp while
+   in view. They are visible when the
    feed opens, hide once FEED_LABEL_HIDE_AFTER directional actions
    (swipe, tap zone, or arrow key, any mix) have been registered
    since they were shown, and reappear after FEED_LABEL_IDLE_MS
@@ -528,14 +559,20 @@ const FEED_LABEL_IDLE_MS=6000;
 let feedIdleTimer=null;
 function feedQueue(){
   let ls=leads().filter(l=>l.status==='new');
-  if(state.feedMode==='hot') ls=ls.filter(fresh);
+  if(state.feedStatus==='hot') ls=ls.filter(fresh);
+  if(state.feedStatus==='new') ls=ls.filter(l=>!fresh(l));
+  if(state.feedStrength!=='all') ls=ls.filter(l=>strengthWord(l)===state.feedStrength);
   if(state.feedType!=='all') ls=ls.filter(l=>l.type===state.feedType);
   if(state.feedArea!=='all') ls=ls.filter(l=>l.area===state.feedArea);
   return ls.sort((a,b)=>((fresh(b)?1:0)-(fresh(a)?1:0))||(strength(b)-strength(a)));
 }
 const feedCurrent=()=>feedQueue()[state.feedIndex]||null;
-function openFeed(mode){
-  state.feedMode=mode; state.feedIndex=0; state.feedExpanded=false;
+/* One feed page, two menu presets (Hayden, 2026-11-23): All
+   Opportunities opens it with the Status filter at All, Hot
+   Opportunities with Status at Hot. Filter changes afterwards
+   behave normally; re-entering re-applies the preset. */
+function openFeed(preset){
+  state.feedStatus=preset==='hot'?'hot':'all'; state.feedIndex=0; state.feedExpanded=false;
   state.feedErr=''; state.feedLabels=true; state.feedLabelActions=0;
   go('feed');
 }
@@ -655,7 +692,10 @@ function feedParticles(dir){
    (down) is the exception: it settles back and expands in place.
    With reduced motion there is no fly-off: the action registers
    instantly. A real drag stamps feedSwipeAt so the click trailing
-   it cannot also fire a card button. */
+   it cannot also fire a card button. Gesture isolation: a press
+   that starts on an interactive element (a button, a select, a
+   field, a link, anything marked data-nogesture) never starts a
+   drag at all, so controls keep their own behavior. */
 function wireFeedCard(){
   const card=$('feedCard'); if(!card) return;
   let sx=0, sy=0, dx=0, dy=0, pid=null;
@@ -688,6 +728,7 @@ function wireFeedCard(){
     setTimeout(()=>{ if(state.screen==='feed') feedAction(dir); },290);
   };
   card.addEventListener('pointerdown',e=>{
+    if(e.target.closest('button,select,input,textarea,a,[data-nogesture]')) return;
     if(state.feedBusy||pid!==null) return;
     pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0; dy=0;
     card.style.transition='none';
@@ -699,10 +740,15 @@ function wireFeedCard(){
    in the empty space around the floating lead card, sized from the
    card's own rectangle so they can never overlap the card itself.
    Above = next, below = expand, right = approve, left = archive.
-   The approve (right) zone is capped so it never runs under the
-   floating Concierge button in the bottom-right corner: its bottom
-   stops a reserved strip above the button, and the button's own
-   stacking (z-index 40, above the zones) wins any remaining edge. */
+   The zones are carved around every control that shares the
+   screen: the filters row (marked data-nogesture) is cut out of
+   the up and left zones from its own rectangle; the approve
+   (right) zone's bottom stops a reserved strip above the floating
+   Concierge button in the bottom-right corner, and the archive
+   (left) and down zones likewise stop above, or start right of,
+   the backReserve strip for the floating Back button in the
+   bottom-left corner. Both floats stack at z-index 40, above the
+   zones, so they win any remaining edge. */
 function clearFeedZones(){ $('feedZones')?.remove(); }
 function buildFeedZones(){
   clearFeedZones();
@@ -710,6 +756,9 @@ function buildFeedZones(){
   const r=cardEl.getBoundingClientRect();
   const vw=window.innerWidth, vh=window.innerHeight, gap=12;
   const conciergeReserve=84;
+  const backReserve=84;
+  const backReserveW=150;
+  const fr=document.querySelector('[data-nogesture]')?.getBoundingClientRect()||null;
   const zones=document.createElement('div'); zones.id='feedZones';
   const labels={up:'Next opportunity',down:'More info',approve:'Approve',archive:'Archive'};
   const mk=(act,x,y,w,h)=>{
@@ -720,27 +769,37 @@ function buildFeedZones(){
     Object.assign(d.style,{left:x+'px',top:y+'px',width:w+'px',height:h+'px'});
     zones.appendChild(d);
   };
-  mk('up', r.left, 0, r.width, r.top-gap);
-  mk('down', r.left, r.bottom+gap, r.width, vh-r.bottom-gap);
-  mk('archive', 0, r.top, r.left-gap, r.height);
+  const upTop=fr?Math.min(fr.bottom+gap, r.top-gap):0;
+  mk('up', r.left, upTop, r.width, r.top-gap-upTop);
+  mk('down', r.left, r.bottom+gap, r.width, vh-backReserve-(r.bottom+gap));
+  const bandX=Math.max(r.left, backReserveW);
+  mk('down', bandX, vh-backReserve, r.right-bandX, backReserve);
+  const leftTop=fr?Math.max(r.top, Math.min(fr.bottom+gap, r.bottom)):r.top;
+  mk('archive', 0, leftTop, r.left-gap, Math.min(r.bottom, vh-backReserve)-leftTop);
   mk('approve', r.right+gap, r.top, vw-r.right-gap, Math.min(r.bottom, vh-conciergeReserve)-r.top);
   document.body.appendChild(zones);
 }
 function vFeed(){
   clearFeedZones();
-  const title=state.feedMode==='hot'?'Hot Opportunities':'All Opportunities';
+  const title=state.feedStatus==='hot'?'Hot Opportunities':'All Opportunities';
   const areas=[...new Set(leads().map(l=>l.area))];
   if(state.feedArea!=='all'&&!areas.includes(state.feedArea)) state.feedArea='all';
   const chips=[['all','All'],['direct','Direct leads'],['trigger','Project triggers']]
     .map(([v,n])=>`<button class="chip${state.feedType===v?' on':''}" data-feedtype="${v}">${n}</button>`).join('');
-  const filters=`<div class="chips">${chips}</div>
-  <select class="field feedarea" id="feedAreaSel" aria-label="Area filter"><option value="all">All areas</option>${areas.map(a=>`<option value="${esc(a)}"${state.feedArea===a?' selected':''}>${esc(a)}</option>`).join('')}</select>`;
+  const statusOpts=[['all','All'],['hot','Hot'],['new','New']]
+    .map(([v,n])=>`<option value="${v}"${state.feedStatus===v?' selected':''}>${n}</option>`).join('');
+  const strengthOpts=[['all','All'],['Strong','Strong'],['Solid','Solid'],['Fair','Fair'],['Light','Light']]
+    .map(([v,n])=>`<option value="${v}"${state.feedStrength===v?' selected':''}>${n}</option>`).join('');
+  const filters=`<div class="feedfilters" data-nogesture>${chips}
+  <select class="field feedselect" id="feedStatusSel" aria-label="Status filter">${statusOpts}</select>
+  <select class="field feedselect" id="feedStrengthSel" aria-label="Strength filter">${strengthOpts}</select>
+  <select class="field feedselect" id="feedAreaSel" aria-label="Area filter"><option value="all">All areas</option>${areas.map(a=>`<option value="${esc(a)}"${state.feedArea===a?' selected':''}>${esc(a)}</option>`).join('')}</select></div>`;
   const q=feedQueue();
   const l=q[state.feedIndex]||null;
   if(!l){
     bare(`<h1 class="title">${title}</h1>${filters}
     <div class="empty">You are all caught up.</div>
-    <div class="stack"><button class="bigbtn" id="feedBackBtn">Back to Opportunities</button></div>`, corners('opps'), true);
+    <div class="stack"><button class="bigbtn" id="feedBackBtn">Back to Opportunities</button></div>`, cornersFeed(), true);
     return;
   }
   const sw=strengthWord(l);
@@ -773,7 +832,7 @@ function vFeed(){
   bare(`<h1 class="title">${title}</h1>${filters}
   <div class="feedpos">${state.feedIndex+1} of ${q.length} · ${q.length-state.feedIndex-1} left</div>
   <div class="feedstage">${card}${labels}</div>
-  ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}`, corners('opps'), true);
+  ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}`, cornersFeed(), true);
   wireFeedCard();
   buildFeedZones();
   armFeedIdle();
@@ -1064,6 +1123,7 @@ document.addEventListener('click',e=>{
   if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
   if(b.dataset.feedtype){state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
   if(b.id==='feedBackBtn'){return go('opps')}
+  if(b.id==='feedBackFloatBtn'){return go('opps')}
   if(b.id==='feedCollapseBtn'){state.feedExpanded=false; render(); return}
   if(b.id==='feedContactBtn'){const fl=feedCurrent(); if(fl){state.selected=fl.id; openContact();} return}
   if(b.dataset.county){state.oppView='county'; state.county=b.dataset.county; return go('list')}
@@ -1137,16 +1197,22 @@ document.addEventListener('input',e=>{
 });
 document.addEventListener('change',e=>{
   if(e.target.id==='feedAreaSel'){state.feedArea=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+  if(e.target.id==='feedStatusSel'){state.feedStatus=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+  if(e.target.id==='feedStrengthSel'){state.feedStrength=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
 });
 document.addEventListener('click',e=>{ if(e.target.id==='overlay') closePopup(); });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'&&$('popupRoot').innerHTML){closePopup(); return}
   /* Feed arrow keys (desktops): same four actions as swipe and tap.
      Only on the feed screen, never while a popup is open, and never
-     while typing in a field (the Area select keeps its own arrows). */
+     while focus sits on an interactive control: a button, select,
+     input, textarea, or editable element keeps its own arrow keys
+     (the filter selects above all). The keys act only when the
+     feed itself has focus (the card or the page body). */
   if(state.screen==='feed'&&e.key.startsWith('Arrow')&&!$('popupRoot').innerHTML){
-    const tag=document.activeElement?.tagName;
-    if(!['INPUT','TEXTAREA','SELECT'].includes(tag)){
+    const ae=document.activeElement;
+    const onControl=ae&&(['BUTTON','SELECT','INPUT','TEXTAREA'].includes(ae.tagName)||ae.isContentEditable);
+    if(!onControl){
       e.preventDefault();
       feedAction({ArrowUp:'up',ArrowDown:'down',ArrowRight:'approve',ArrowLeft:'archive'}[e.key]);
       return;
