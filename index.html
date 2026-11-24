@@ -564,12 +564,18 @@ function vList(){
    feedAction dispatcher. */
 /* Card-pull demo (Hayden, 2026-11-23, replacing the emoji arrow
    labels shipped earlier the same day): instead of static labels,
-   the card itself is pulled SLIGHTLY toward one direction at a
-   time, in a paced loop (up, right, down, left), and a bare
-   floating text naming that direction's action pops up on the
-   side the card is pulled toward: up "Next lead", right
-   "Approve", down "More info", left "Archive". Only one
-   description is visible at a time. The demo runs under the same
+   the card itself is pulled toward one direction at a time, in a
+   paced loop (up, right, down, left), and a bare floating text
+   naming that direction's action pops up on the side the card is
+   pulled toward: up "Next lead", right "Approve", down "More
+   info", left "Archive". Only one description is visible at a
+   time. The pull is deliberately unmistakable (FEED_DEMO_PULL_PX,
+   strengthened the same night at Hayden's direction so the card
+   visibly LEANS into the direction its description names): it
+   eases out with a slight spring overshoot as it settles at the
+   pulled position, the description fades in as the pull begins
+   and stays through the hold, and the card springs back to
+   center on the return. The demo runs under the same
    visibility rules the labels had: it starts when the feed opens
    (after the card's entrance settles), stops for the session
    window once FEED_DEMO_HIDE_AFTER directional actions (swipe,
@@ -589,9 +595,9 @@ function vList(){
 const FEED_DEMO_HIDE_AFTER=3;
 const FEED_DEMO_IDLE_MS=6000;
 const FEED_DEMO_START_MS=400;
-const FEED_DEMO_PULL_PX=22;
+const FEED_DEMO_PULL_PX=36;
 const FEED_DEMO_PULL_MS=450;
-const FEED_DEMO_HOLD_MS=600;
+const FEED_DEMO_HOLD_MS=700;
 const FEED_DEMO_RETURN_MS=350;
 const FEED_DEMO_PAUSE_MS=500;
 const FEED_DEMO_STEPS=Object.freeze([
@@ -680,7 +686,7 @@ function feedDemoPull(){
   const s=FEED_DEMO_STEPS[feedDemoStep%FEED_DEMO_STEPS.length];
   tip.textContent=s.text;
   tip.className='feeddemo '+s.cls+' show';
-  card.style.transition=`transform ${FEED_DEMO_PULL_MS}ms ease-out`;
+  card.style.transition=`transform ${FEED_DEMO_PULL_MS}ms cubic-bezier(.22,1.36,.36,1)`;
   card.style.transform=`translate(${s.x}px,${s.y}px) rotate(${s.rot}deg)`;
   feedDemoApplied=true;
   feedDemoTimer=setTimeout(feedDemoReturn,FEED_DEMO_PULL_MS+FEED_DEMO_HOLD_MS);
@@ -690,7 +696,7 @@ function feedDemoReturn(){
   if(!feedDemoActive) return;
   const card=$('feedCard'); const tip=$('feedDemoTip');
   if(tip) tip.classList.remove('show');
-  if(card){ card.style.transition=`transform ${FEED_DEMO_RETURN_MS}ms ease-in-out`; card.style.transform=''; }
+  if(card){ card.style.transition=`transform ${FEED_DEMO_RETURN_MS}ms cubic-bezier(.34,1.3,.64,1)`; card.style.transform=''; }
   feedDemoApplied=false;
   feedDemoStep++;
   feedDemoTimer=setTimeout(feedDemoPull,FEED_DEMO_RETURN_MS+FEED_DEMO_PAUSE_MS);
@@ -791,25 +797,89 @@ function feedParticles(dir){
   document.body.appendChild(layer);
   setTimeout(()=>layer.remove(),1000);
 }
+/* Magnetic drag physics (Hayden, 2026-11-23): like the Hello
+   element on the Client Hub screen, the card does not track the
+   pointer rigidly. A pure magnet mapping first reshapes the raw
+   pointer displacement, per axis: inside FEED_MAGNET_INNER px of
+   the base position the card is pulled back toward the middle
+   (rendered at FEED_MAGNET_RESIST of raw, a light resistance);
+   from there to the FEED_DRAG_THRESHOLD action point it tracks
+   neutrally; past the threshold the pull toward the closest
+   direction takes over and grows progressively stronger (the
+   marginal assist ramps up to FEED_MAGNET_ASSIST by
+   FEED_MAGNET_FULL and holds there), so the rendered card runs
+   ahead of the pointer and visibly leans into the action it is
+   about to take. The mapping is continuous and monotonic, and
+   zero maps to zero. The rendered position then CHASES the
+   mapped target with spring smoothing: each animation frame
+   closes FEED_DRAG_CHASE of the remaining distance, so the card
+   trails the hand with a soft springy lag; rotation follows the
+   rendered horizontal displacement. */
+const FEED_DRAG_THRESHOLD=40;
+const FEED_MAGNET_RESIST=0.8;
+const FEED_MAGNET_ASSIST=1.25;
+const FEED_MAGNET_INNER=16;
+const FEED_MAGNET_FULL=64;
+const FEED_DRAG_CHASE=0.35;
+function magnetAxis(v){
+  if(!v) return 0;
+  const sign=v<0?-1:1, a=Math.abs(v);
+  const innerEdge=FEED_MAGNET_INNER*FEED_MAGNET_RESIST;
+  if(a<=FEED_MAGNET_INNER) return sign*a*FEED_MAGNET_RESIST;
+  if(a<=FEED_DRAG_THRESHOLD) return sign*(innerEdge+(a-FEED_MAGNET_INNER));
+  const thresholdEdge=innerEdge+(FEED_DRAG_THRESHOLD-FEED_MAGNET_INNER);
+  const span=FEED_MAGNET_FULL-FEED_DRAG_THRESHOLD;
+  if(a<=FEED_MAGNET_FULL){
+    const t=a-FEED_DRAG_THRESHOLD;
+    return sign*(thresholdEdge+t+(FEED_MAGNET_ASSIST-1)*t*t/(2*span));
+  }
+  const fullEdge=thresholdEdge+span+(FEED_MAGNET_ASSIST-1)*span/2;
+  return sign*(fullEdge+(a-FEED_MAGNET_FULL)*FEED_MAGNET_ASSIST);
+}
+function magnetOffset(dx,dy){ return {x:magnetAxis(dx), y:magnetAxis(dy)}; }
 /* Drag on the card itself (Pointer Events unify mouse and touch):
-   the card FOLLOWS the pointer with a slight rotation on the
-   horizontal drag. Release under the 40px threshold springs back
-   with an overshoot ease. Release past it flies the card off in
-   that direction and only then registers the action; expand
-   (down) is the exception: it settles back and expands in place.
-   With reduced motion there is no fly-off: the action registers
-   instantly. A real drag stamps feedSwipeAt so the click trailing
-   it cannot also fire a card button. Gesture isolation: a press
-   that starts on an interactive element (a button, a select, a
-   field, a link, anything marked data-nogesture) never starts a
-   drag at all, so controls keep their own behavior. The card-pull
-   demo drives the same transform: a press on the card stops the
-   demo before the drag takes over (stopFeedDemo clears its
-   transform and timers), feedDragActive marks the drag for the
-   demo engine, and the demo may resume under the idle rules. */
+   the card CHASES the magnet-mapped pointer (above) with a
+   slight rotation on the rendered horizontal drag. Release is
+   judged on the RAW displacement and its outcomes are unchanged:
+   under the FEED_DRAG_THRESHOLD threshold the card springs back
+   with an overshoot ease; at or past it the card flies off in
+   that direction, starting from its rendered (magnet-adjusted)
+   position, and only then registers the action; expand (down) is
+   the exception: it settles back and expands in place. The chase
+   loop is cancelled on release before the spring-back or fly-off
+   transition takes over, so the two never fight. With reduced
+   motion there is no chase and no magnet: the card follows the
+   raw pointer and release registers instantly, with no fly-off.
+   A real drag stamps feedSwipeAt so the click trailing it cannot
+   also fire a card button. Gesture isolation: a press that starts
+   on an interactive element (a button, a select, a field, a link,
+   anything marked data-nogesture) never starts a drag at all, so
+   controls keep their own behavior. The card-pull demo drives the
+   same transform: a press on the card stops the demo before the
+   drag takes over (stopFeedDemo clears its transform and timers),
+   feedDragActive marks the drag for the demo engine, and the demo
+   may resume under the idle rules. */
 function wireFeedCard(){
   const card=$('feedCard'); if(!card) return;
   let sx=0, sy=0, dx=0, dy=0, pid=null;
+  /* Rendered displacement (rx, ry): the magnet-mapped target,
+     chased frame by frame; rotation reads off it. */
+  let rx=0, ry=0, chaseRaf=null;
+  const paintDrag=()=>{
+    const rot=Math.max(-6,Math.min(6,rx/18));
+    card.style.transform=`translate(${rx}px,${ry}px) rotate(${rot}deg)`;
+  };
+  const chaseStep=()=>{
+    chaseRaf=null;
+    const t=magnetOffset(dx,dy);
+    rx+=(t.x-rx)*FEED_DRAG_CHASE;
+    ry+=(t.y-ry)*FEED_DRAG_CHASE;
+    if(Math.abs(t.x-rx)<0.5&&Math.abs(t.y-ry)<0.5){ rx=t.x; ry=t.y; paintDrag(); return; }
+    paintDrag();
+    chaseRaf=requestAnimationFrame(chaseStep);
+  };
+  const chaseStart=()=>{ if(chaseRaf===null) chaseRaf=requestAnimationFrame(chaseStep); };
+  const chaseStop=()=>{ if(chaseRaf!==null){ cancelAnimationFrame(chaseRaf); chaseRaf=null; } };
   const springBack=()=>{
     card.style.transition='transform .3s cubic-bezier(.34,1.56,.64,1)';
     card.style.transform='';
@@ -818,22 +888,23 @@ function wireFeedCard(){
   const onMove=e=>{
     if(pid===null||e.pointerId!==pid) return;
     dx=e.clientX-sx; dy=e.clientY-sy;
-    const rot=Math.max(-6,Math.min(6,dx/18));
-    card.style.transform=`translate(${dx}px,${dy}px) rotate(${rot}deg)`;
+    if(REDUCED_MOTION()){ rx=dx; ry=dy; paintDrag(); return; }
+    chaseStart();
   };
   const onUp=e=>{
     if(pid===null||e.pointerId!==pid) return;
     pid=null;
     feedDragActive=false;
+    chaseStop();
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
     const ax=Math.abs(dx), ay=Math.abs(dy);
     if(Math.max(ax,ay)>=10) state.feedSwipeAt=Date.now();
-    if(Math.max(ax,ay)<40){ springBack(); return; }
+    if(Math.max(ax,ay)<FEED_DRAG_THRESHOLD){ springBack(); return; }
     const dir=ax>ay?(dx>0?'approve':'archive'):(dy<0?'up':'down');
     if(dir==='down'||REDUCED_MOTION()){ springBack(); feedAction(dir); return; }
-    const offX=dir==='approve'?window.innerWidth+80:dir==='archive'?-(window.innerWidth+80):dx;
-    const offY=dir==='up'?-(window.innerHeight+80):dy;
+    const offX=dir==='approve'?window.innerWidth+80:dir==='archive'?-(window.innerWidth+80):rx;
+    const offY=dir==='up'?-(window.innerHeight+80):ry;
     card.style.transition='transform .28s ease-in, opacity .28s ease-in';
     card.style.transform=`translate(${offX}px,${offY}px) rotate(${dir==='approve'?10:dir==='archive'?-10:0}deg)`;
     card.style.opacity='0';
@@ -844,7 +915,7 @@ function wireFeedCard(){
     if(state.feedBusy||pid!==null) return;
     stopFeedDemo();
     feedDragActive=true;
-    pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0; dy=0;
+    pid=e.pointerId; sx=e.clientX; sy=e.clientY; dx=0; dy=0; rx=0; ry=0;
     card.style.transition='none';
     document.addEventListener('pointermove',onMove);
     document.addEventListener('pointerup',onUp);
