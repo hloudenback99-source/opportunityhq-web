@@ -222,6 +222,58 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
   font-size:17px; font-weight:650; cursor:pointer;
 }
 .feedbtn.primary{background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a; border-color:transparent; font-weight:780}
+/* Feed undo (Hayden, 2026-11-25): a floating control at the
+   top-left of the feed screens, clear of the bottom-left Back
+   float, the bottom-right Concierge float, the bottom-center
+   footer hint, and the in-flow filter row. It is TWO separate
+   tap targets in one floating cluster: the Undo button itself
+   (one tap undoes the most recent undoable action immediately,
+   no menu, no confirmation) and a smaller chevron button beside
+   it (opens the history panel only, never undoes). The panel
+   hangs below the cluster with the same card styling as the
+   app's popups. Rendered only on feed screens, in both swipe
+   and button modes: button-mode taps are exactly the accidental
+   taps this exists for. */
+.feedundo{
+  position:fixed; left:16px; top:calc(16px + env(safe-area-inset-top, 0px)); z-index:40;
+  display:flex; gap:6px; align-items:stretch;
+}
+.undo-main,.undo-chev{
+  min-height:48px; border-radius:999px; color:var(--ink);
+  background:linear-gradient(180deg,var(--btn2),var(--btn));
+  border:1px solid var(--line);
+  box-shadow:0 14px 34px rgba(0,0,0,.45);
+  font-size:16px; font-weight:700;
+}
+.undo-main{padding:12px 18px}
+.undo-main:disabled{opacity:.45; cursor:default}
+.undo-chev{width:48px; padding:12px 0; font-size:15px}
+.undopanel{
+  position:fixed; left:16px; top:calc(76px + env(safe-area-inset-top, 0px)); z-index:45;
+  width:min(360px,calc(100vw - 32px));
+  background:rgba(18,28,46,.97); border:1px solid var(--line); border-radius:22px;
+  padding:18px 16px 8px; box-shadow:0 30px 80px rgba(0,0,0,.55);
+  animation:rise .25s ease both;
+}
+.undopanel h2{margin:0 0 12px; font-size:19px; text-align:left}
+.undorow{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:12px 14px; margin-bottom:10px;
+  background:rgba(22,35,58,.55); border:1px solid var(--line); border-radius:16px;
+}
+.undorow .ut{display:block; font-size:16px; font-weight:650; line-height:1.25}
+.undorow .um{display:block; font-size:13px; color:var(--muted); margin-top:2px}
+.undorow .uctl{display:flex; align-items:center; gap:10px; flex-shrink:0}
+.undorow .ustate{font-size:13px; color:var(--muted); font-weight:600}
+.uact{
+  min-height:40px; padding:8px 14px; border-radius:999px;
+  background:linear-gradient(180deg,var(--btn2),var(--btn));
+  border:1px solid var(--line); color:var(--ink);
+  font-size:14px; font-weight:700; cursor:pointer;
+}
+@media (prefers-reduced-motion: reduce){
+  .undopanel{animation:none}
+}
 .hdlink{display:block; text-decoration:none; margin-bottom:14px}
 @media (max-width:480px){
   body{padding:14px 10px}
@@ -236,6 +288,7 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
 <div id="feedBackRoot"></div>
 <div id="feedGlowRoot"></div>
 <div id="feedHintRoot"></div>
+<div id="undoRoot"></div>
 <div id="conciergeRoot"></div>
 <div id="popupRoot"></div>
 
@@ -269,6 +322,7 @@ const state={
   feedStatus:'all', feedStrength:'all', feedType:'all', feedArea:'all', feedIndex:0,
   feedExpanded:false, feedBusy:false, feedErr:'', feedDemo:true,
   feedDemoActions:0, feedSwipeAt:0, feedSwipe:true,
+  undoActions:null, undoOpen:false, undoBusy:false,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
 };
 const $=id=>document.getElementById(id);
@@ -414,7 +468,7 @@ function strengthWord(l){
 const APPROVED_STATUSES=Object.freeze(['reviewing','contact_planned','interested','outreach_attempted','outreach_sent','engaged','qualified','application_started','submitted_to_provider','nurture','funded']);
 const ARCHIVE_STATUSES=Object.freeze(['passed','disqualified','closed_lost','closed','expired','funded_elsewhere']);
 
-function go(screen){state.screen=screen;state.savedMsg=false;render()}
+function go(screen){state.screen=screen;state.savedMsg=false;state.undoOpen=false;render()}
 function corners(backTarget){
   return (backTarget?`<button class="backbtn" data-back="${backTarget}" aria-label="Back">←</button>`:'')
        + `<button class="helpbtn" data-nav="help" aria-label="Help">?</button>`;
@@ -427,6 +481,7 @@ function panel(html,cornersHtml,concierge){
   renderFeedBack(false);
   renderFeedGlow(false);
   renderFeedHint(false);
+  renderFeedUndo(false);
 }
 /* The feed screens render WITHOUT the outer panel box (Hayden,
    2026-11-23): the lead card, the filters, and the position
@@ -439,6 +494,7 @@ function bare(html,cornersHtml,concierge){
   renderFeedBack(true);
   renderFeedGlow(true);
   renderFeedHint(true);
+  renderFeedUndo(true);
 }
 /* Feed Back control (Hayden, 2026-11-23): on the feed screens the
    Back button leaves the top-left corner and floats at the
@@ -485,6 +541,131 @@ function wireFeedHint(){
   const el=$('feedHintOff'); if(!el) return;
   el.addEventListener('mouseenter',()=>{ if(feedHintTimer){ clearTimeout(feedHintTimer); feedHintTimer=null; } setToggleHighlight(true); });
   el.addEventListener('mouseleave',()=>setToggleHighlight(false));
+}
+/* Feed undo (Hayden, 2026-11-25): a floating control at the
+   top-left of the feed screens (bare shows it, panel clears it,
+   the same gate as the feed Back float). TWO distinct tap
+   targets, side by side, with fully separate jobs:
+   - the Undo button (counter-clockwise arrow + "Undo"): one tap
+     undoes the most recent undoable action immediately. No menu,
+     no confirmation.
+   - the chevron button beside it: opens or closes the history
+     panel ONLY. It never undoes anything.
+   The panel lists the newest actions from GET /api/actions
+   (server-backed, this operator's own feed decisions in this
+   HQ): active entries carry their own Undo button, undone
+   entries read "Undone" and carry a Redo button. Undo and redo
+   are compensating commands through POST /api/leads/:id/undo
+   and /redo with a fresh Idempotency-Key per intent, and a 202
+   means "validated" exactly like a status command: the lead's
+   local status flips at once and is flagged pendingSync until a
+   refresh shows the verified state. The panel closes on an
+   outside click, on Escape, and on any feed navigation (a
+   gesture, a filter change, leaving the feed). Guard refusals
+   from the server surface in the feed's own inline error line. */
+function renderFeedUndo(show){
+  const root=$('undoRoot'); if(!root) return;
+  if(!show){ root.innerHTML=''; state.undoOpen=false; return; }
+  const actions=state.undoActions||[];
+  const hasActive=actions.some(a=>a.state==='active');
+  root.innerHTML=`<div class="feedundo">
+    <button class="undo-main" id="undoBtn" ${hasActive?'':'disabled'} aria-label="Undo the most recent action">⟲ Undo</button>
+    <button class="undo-chev" id="undoMenuBtn" aria-label="Action history" aria-haspopup="true" aria-expanded="${state.undoOpen}">▾</button>
+  </div>${state.undoOpen?undoPanelHtml():''}`;
+}
+function undoPanelHtml(){
+  const actions=state.undoActions;
+  let bodyHtml;
+  if(actions===null){
+    bodyHtml=`<div class="empty" style="padding:10px 4px">Loading.</div>`;
+  }else if(!actions.length){
+    bodyHtml=`<div class="empty" style="padding:10px 4px">No actions yet.</div>`;
+  }else{
+    bodyHtml=actions.slice(0,8).map(a=>{
+      const what=a.to==='reviewing'?'Approved':'Archived';
+      const when=relTime(a.updatedAt||a.createdAt);
+      const ctl=a.state==='undone'
+        ? `<span class="ustate">Undone</span><button class="uact" data-redo="${esc(a.id)}">Redo</button>`
+        : `<button class="uact" data-undo="${esc(a.id)}">Undo</button>`;
+      return `<div class="undorow"><span><span class="ut">${esc(a.leadTitle||'Lead')}</span><span class="um">${what} · ${esc(when)}</span></span><span class="uctl">${ctl}</span></div>`;
+    }).join('');
+  }
+  return `<div class="undopanel" id="undoPanel" role="dialog" aria-label="Action history"><h2>Recent actions</h2>${bodyHtml}</div>`;
+}
+/* Relative time for history rows, in the feed's own idiom. */
+function relTime(ts){
+  const t=ts?new Date(ts).getTime():NaN;
+  if(!Number.isFinite(t)) return '';
+  const mins=Math.max(0,Math.round((Date.now()-t)/60000));
+  if(mins<1) return 'Just now';
+  if(mins<60) return mins+'m ago';
+  const hrs=Math.round(mins/60);
+  if(hrs<24) return hrs+'h ago';
+  return Math.round(hrs/24)+'d ago';
+}
+/* Refresh the action history for the current HQ. A failed load
+   keeps the last known list (or an empty one) rather than
+   blocking the feed: the server re-checks ownership and currency
+   on every undo/redo, so a stale list can never act wrongly. */
+async function loadUndoActions(){
+  if(!state.tenant) return;
+  try{
+    const r=await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/actions?tenant='+encodeURIComponent(state.tenant));
+    state.undoActions=r.actions||[];
+  }catch(e){
+    if(state.undoActions===null) state.undoActions=[];
+  }
+  if(state.screen==='feed') renderFeedUndo(true);
+}
+const UNDO_ERRORS={
+  lead_status_changed:'That lead has moved on, so this can no longer be changed.',
+  already_undone:'That action was already undone.',
+  not_undone:'That action has not been undone.',
+  action_not_found:'That action is no longer available.',
+  role_cannot_write:'Your role can view but not update leads.',
+  tenant_writes_disabled:'Updates are paused for this HQ right now.'
+};
+/* One undo or redo, from the quick button or a panel row: same
+   endpoint shape, same pendingSync handling as a status command.
+   The local lead flips immediately, so an undone lead rejoins
+   the feed queue on the re-render and a redone one leaves it. */
+async function runUndoRedo(a,mode){
+  if(state.undoBusy||!a) return;
+  state.undoBusy=true; state.feedErr='';
+  try{
+    await api('https://fafowzslfscgtahqokpu.supabase.co/functions/v1/ohq/api/leads/'+encodeURIComponent(a.sourceRecordId||a.leadId)+'/'+mode,{
+      method:'POST',
+      headers:{'Idempotency-Key': crypto.randomUUID()},
+      body:JSON.stringify({tenant:state.tenant, commandId:a.id})
+    });
+    const l=leads().find(x=>x.id===a.sourceRecordId||x.id===a.leadId);
+    if(l){ l.status=mode==='undo'?a.from:a.to; l.pendingSync=true; }
+    const q=feedQueue();
+    if(state.feedIndex>q.length) state.feedIndex=q.length;
+  }catch(e){
+    state.feedErr=UNDO_ERRORS[e.code]||'We could not save that change. Please try again.';
+  }
+  state.undoBusy=false;
+  await loadUndoActions();
+  render();
+}
+/* The Undo button itself: undo the newest active action, nothing
+   else. It never opens the panel. */
+function quickUndo(){
+  const a=(state.undoActions||[]).find(x=>x.state==='active');
+  if(a) runUndoRedo(a,'undo');
+}
+/* The chevron: open or close the history panel, nothing else.
+   It never undoes anything. Opening refreshes the list first. */
+function toggleUndoPanel(){
+  state.undoOpen=!state.undoOpen;
+  if(state.undoOpen) loadUndoActions();
+  renderFeedUndo(true);
+}
+function closeUndoPanel(){
+  if(!state.undoOpen) return;
+  state.undoOpen=false;
+  if(state.screen==='feed') renderFeedUndo(true);
 }
 /* Feed corners: Help only. The feed's Back is the bottom-left
    float above, so the feed renders no top-left corner back. */
@@ -721,6 +902,7 @@ const feedCurrent=()=>feedQueue()[state.feedIndex]||null;
 function openFeed(preset){
   state.feedStatus=preset==='hot'?'hot':'all'; state.feedIndex=0; state.feedExpanded=false;
   state.feedErr=''; state.feedDemo=true; state.feedDemoActions=0;
+  loadUndoActions();
   go('feed');
 }
 function clearFeedIdle(){ if(feedIdleTimer){ clearTimeout(feedIdleTimer); feedIdleTimer=null; } }
@@ -826,6 +1008,7 @@ function feedApprove(){ feedDecide('reviewing'); }
 function feedArchive(){ feedDecide('passed'); }
 function feedAction(name){
   if($('popupRoot').innerHTML) return;
+  closeUndoPanel();
   noteFeedDirectional();
   feedParticles(name);
   feedGlowPulse(name);
@@ -854,6 +1037,7 @@ async function feedDecide(target){
     state.feedErr=STATUS_ERRORS[e.code]||'We could not save that change. Please try again.';
   }
   state.feedBusy=false;
+  loadUndoActions();
   render();
 }
 /* Particle confirmations (Hayden, 2026-11-23): a short burst from
@@ -1462,6 +1646,7 @@ async function attemptLogout(){
   ACCESS_TOKEN=null; DATA=null;
   state.user=null; state.tenant=null; state.tenants=[]; state.selected=null;
   state.lastSearch=''; state.ticketId=null; state.loginErr=''; state.createMsg='';
+  state.undoActions=null; state.undoOpen=false; state.undoBusy=false;
   closeContact();
   go('login');
 }
@@ -1474,6 +1659,11 @@ document.addEventListener('submit',e=>{
   if(e.target.id==='conciergeForm'){ e.preventDefault(); sendConcierge(); }
 });
 document.addEventListener('click',e=>{
+  /* The undo history panel closes on any click outside it. This
+     runs before every other branch, and clicks inside the undo
+     cluster (either button, or a panel row) are exempt: they have
+     their own branches below. */
+  if(state.undoOpen&&!e.target.closest('#undoRoot')) closeUndoPanel();
   const z=e.target.closest('[data-feedzone]');
   if(z){ if(state.screen==='feed') feedAction(z.dataset.feedzone); return; }
   const b=e.target.closest('button'); if(!b) return;
@@ -1498,8 +1688,12 @@ document.addEventListener('click',e=>{
   if(b.dataset.view){state.oppView=b.dataset.view; state.lastOppView=b.dataset.view; return go('list')}
   if(b.dataset.feed){openFeed(b.dataset.feed); return}
   if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
-  if(b.dataset.feedtype){state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
-  if(b.id==='feedSwipeToggle'){state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedDemo=true; state.feedDemoActions=0;} render(); return}
+  if(b.dataset.feedtype){closeUndoPanel(); state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
+  if(b.id==='feedSwipeToggle'){closeUndoPanel(); state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedDemo=true; state.feedDemoActions=0;} render(); return}
+  if(b.id==='undoBtn'){quickUndo(); return}
+  if(b.id==='undoMenuBtn'){toggleUndoPanel(); return}
+  if(b.dataset.undo){const a=(state.undoActions||[]).find(x=>x.id===b.dataset.undo); if(a) runUndoRedo(a,'undo'); return}
+  if(b.dataset.redo){const a=(state.undoActions||[]).find(x=>x.id===b.dataset.redo); if(a) runUndoRedo(a,'redo'); return}
   if(b.id==='feedHintOff'){pulseToggleHighlight(); return}
   if(b.dataset.feedbtn){feedAction(b.dataset.feedbtn==='collapse'?'up':b.dataset.feedbtn); return}
   if(b.id==='feedBackBtn'){return go('opps')}
@@ -1576,12 +1770,13 @@ document.addEventListener('input',e=>{
   if(e.target.id==='searchInput'){state.lastSearch=e.target.value; render(); const si=$('searchInput'); if(si){si.focus(); si.setSelectionRange(si.value.length,si.value.length)}}
 });
 document.addEventListener('change',e=>{
-  if(e.target.id==='feedAreaSel'){state.feedArea=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
-  if(e.target.id==='feedStatusSel'){state.feedStatus=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
-  if(e.target.id==='feedStrengthSel'){state.feedStrength=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+  if(e.target.id==='feedAreaSel'){closeUndoPanel(); state.feedArea=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+  if(e.target.id==='feedStatusSel'){closeUndoPanel(); state.feedStatus=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+  if(e.target.id==='feedStrengthSel'){closeUndoPanel(); state.feedStrength=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
 });
 document.addEventListener('click',e=>{ if(e.target.id==='overlay') closePopup(); });
 document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'&&state.undoOpen){closeUndoPanel(); return}
   if(e.key==='Escape'&&$('popupRoot').innerHTML){closePopup(); return}
   /* Feed arrow keys (desktops): same four actions as swipe and tap.
      Only on the feed screen in swipe mode, never while a popup is
