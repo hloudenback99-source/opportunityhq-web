@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080d18">
-<meta name="description" content="OpportunityHQ by HaydenWorks. Simple, calm, action first.">
+<meta name="description" content="HWHQ by HaydenWorks. Simple, calm, action first.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="icon" href="icon-192.png" type="image/png" sizes="192x192">
-<title>OpportunityHQ | HaydenWorks</title>
+<title>HWHQ</title>
 <style>
 :root{
   --ink:#f4f7fd; --muted:#9db0c6; --cyan:#1fe2ff; --gold:#d7b36a;
@@ -553,6 +553,11 @@ function vSetPassword(){
   </form>
   ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`);
 }
+/* HQ type labels for the picker (HWHQ rename, 2026-11-25): the
+   umbrella app hosts OpportunityHQ, TerritoryHQ, and PartnerHQ
+   tenants. /api/me carries each tenant's type from tenants.hq_type;
+   an absent or unknown type renders no label, never a guessed one. */
+const HQ_TYPE_LABELS={opportunity:'OpportunityHQ',territory:'TerritoryHQ',partner:'PartnerHQ'};
 /* HQ entitlement status for the picker: 'active' reads "Active"; any
    other value is shown title-cased as stored. Absent status (API not
    wired for summaries) renders no status line at all. */
@@ -564,7 +569,11 @@ function statusText(s){
 function vChoose(){
   const hqs=state.tenants.map(t=>{
     const name=t.name||tenantMeta(t.tenant).name;
-    const st=statusText(t.status);
+    // Meta line: "<Type> · <Status>" when the /api/me entry carries a
+    // type; the status alone when it does not (exactly as before); the
+    // type alone when status is absent.
+    const typeLabel=HQ_TYPE_LABELS[t.type]||'';
+    const st=[typeLabel,statusText(t.status)].filter(Boolean).join(' · ');
     // The badge exists only for a real count above zero: no badge at
     // zero, and none when the API did not send a count at all.
     const badge=(typeof t.newLeads==='number'&&t.newLeads>0)?`<span class="badge">${t.newLeads} new</span>`:'';
