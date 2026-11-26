@@ -87,6 +87,20 @@ textarea.field{min-height:110px; resize:vertical}
   display:block; margin:20px auto 0; background:none; border:0; color:var(--muted);
   font-size:15px; padding:10px 14px; text-decoration:underline; text-underline-offset:4px;
 }
+/* Reveal password (Hayden, 2026-11-25): every password field
+   (Login, Create account, Set a new password) sits in a wrapper
+   with a small Show/Hide toggle at its right edge, in the same
+   quiet underlined style as the text links, so the user can
+   check what they typed before submitting. The toggle is a
+   type="button" control: it never submits the form, and flipping
+   the input type never touches the field's value. */
+.pwfield{position:relative}
+.pwfield .field{padding-right:88px}
+.pwreveal{
+  position:absolute; right:8px; top:30px; transform:translateY(-50%);
+  min-height:44px; padding:8px 14px; background:none; border:0; color:var(--muted);
+  font-size:15px; font-weight:600; text-decoration:underline; text-underline-offset:4px; cursor:pointer;
+}
 .demo{margin:22px 0 0; text-align:center; font-size:12px; letter-spacing:1.6px; color:#5f748e; text-transform:uppercase}
 .backbtn,.helpbtn{
   position:absolute; width:48px; height:48px; border-radius:50%;
@@ -222,6 +236,17 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
   font-size:17px; font-weight:650; cursor:pointer;
 }
 .feedbtn.primary{background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a; border-color:transparent; font-weight:780}
+/* Expanded card in swipe mode (Hayden, 2026-11-25): while a card
+   is expanded, swipe mode pauses (see feedSwipePaused), so the
+   card becomes a reading surface instead: a flex column capped
+   to the viewport, its detail region scrolling vertically
+   (touch-action pan-y, so a touch scroll is never captured as a
+   drag), and the Contact stack plus a decision row pinned at
+   the bottom: Collapse, Approve, Archive. Collapsing or deciding
+   clears the expanded state and swipe mode resumes on its own. */
+.feedcard.expanded{display:flex; flex-direction:column; max-height:min(76vh,680px); touch-action:pan-y}
+.feedscroll{flex:1 1 auto; min-height:0; overflow-y:auto; touch-action:pan-y; -webkit-overflow-scrolling:touch}
+.feeddecide{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-top:12px}
 /* Feed undo (Hayden, 2026-11-25): a floating control at the
    top-left of the feed screens, clear of the bottom-left Back
    float, the bottom-right Concierge float, the bottom-center
@@ -525,6 +550,10 @@ function renderFeedGlow(show){
    for FEED_HINT_PULSE_MS. */
 function renderFeedHint(show){
   const root=$('feedHintRoot'); if(!root) return;
+  /* While a card is expanded, swipe mode is paused: the hint
+     would invite gestures that cannot land, so it hides until
+     the card collapses or is decided. */
+  if(state.feedExpanded) show=false;
   root.innerHTML=show&&state.feedSwipe?`<div class="feedhint"><div class="feedhint-main">Swipe, drag, or tap the lead.</div><button class="feedhint-off" id="feedHintOff" type="button" aria-label="Show me the swipe mode toggle">turn off</button></div>`:'';
 }
 const FEED_HINT_PULSE_MS=2000;
@@ -694,7 +723,7 @@ function vLogin(){
   panel(`<h1 class="title">Log in</h1>
   <form id="loginForm">
     <input class="field" id="u" type="email" autocomplete="username" placeholder="Email" aria-label="Email">
-    <input class="field" id="p" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
+    <div class="pwfield"><input class="field" id="p" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password"><button class="pwreveal" type="button" data-reveal="p" aria-pressed="false">Show</button></div>
     <button class="bigbtn primary" type="button" id="loginBtn">Log in</button>
   </form>
   <button class="quiet" data-nav="create">Create an account</button>
@@ -708,7 +737,7 @@ function vCreate(){
   ${state.savedMsg?'<div class="saved">Account created.</div>':''}
   <form id="createForm">
     <input class="field" id="cu" type="email" autocomplete="email" placeholder="Business email" aria-label="Business email">
-    <input class="field" id="cp" type="password" autocomplete="new-password" placeholder="Password" aria-label="Password">
+    <div class="pwfield"><input class="field" id="cp" type="password" autocomplete="new-password" placeholder="Password" aria-label="Password"><button class="pwreveal" type="button" data-reveal="cp" aria-pressed="false">Show</button></div>
     <button class="bigbtn primary" type="button" id="createBtn">Create account</button>
   </form>
   ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`, cornersLite('login'));
@@ -729,7 +758,7 @@ function vForgot(){
 function vSetPassword(){
   panel(`<h1 class="title">Set a new password</h1>
   <form id="setPasswordForm">
-    <input class="field" id="np" type="password" autocomplete="new-password" placeholder="New password" aria-label="New password">
+    <div class="pwfield"><input class="field" id="np" type="password" autocomplete="new-password" placeholder="New password" aria-label="New password"><button class="pwreveal" type="button" data-reveal="np" aria-pressed="false">Show</button></div>
     <button class="bigbtn primary" type="button" id="setPasswordBtn">Set password</button>
   </form>
   ${state.loginErr?`<p class="demo" style="color:#ff9d9d">${esc(state.loginErr)}</p>`:''}`);
@@ -994,6 +1023,26 @@ function stopFeedChrome(){
   stopFeedDemo();
   feedGlowClear();
 }
+/* Swipe pause (Hayden, 2026-11-25): in swipe mode, an expanded
+   card pauses every directional decision path until it is
+   collapsed or decided from its bottom button row. This one
+   predicate is the pause condition everywhere it applies: the
+   card's drag wiring refuses to start a drag (so the card never
+   chases the pointer and no edge glow lights), the tap zones
+   refuse to dispatch, and the arrow-key handler refuses to act.
+   The deliberate controls are NOT paused: the expanded card's
+   own Collapse / Approve / Archive buttons (Approve and Archive
+   ride the same data-feedbtn delegation as the button-mode card
+   buttons) and the Contact button keep working, and collapsing
+   or deciding clears feedExpanded, so swipe mode resumes on the
+   resulting card unless the user toggled it off. feedUp's
+   expanded-collapse branch below survives for exactly one
+   deliberate path: button mode's on-card Collapse button, which
+   dispatches 'up' through feedAction. In swipe mode no gesture,
+   zone, or key can reach it while expanded anymore. */
+function feedSwipePaused(){
+  return state.screen==='feed'&&state.feedSwipe&&state.feedExpanded;
+}
 function feedUp(){
   if(state.feedBusy) return;
   if(state.feedExpanded){ state.feedExpanded=false; render(); return; }
@@ -1252,6 +1301,11 @@ function wireFeedCard(){
   };
   card.addEventListener('pointerdown',e=>{
     if(e.target.closest('button,select,input,textarea,a,[data-nogesture]')) return;
+    /* Swipe pause: while the card is expanded, no drag starts at
+       all, so the card never chases the pointer, no edge glow
+       lights, and a touch on the detail region scrolls it
+       instead of dragging the card. */
+    if(feedSwipePaused()) return;
     if(state.feedBusy||pid!==null) return;
     stopFeedDemo();
     feedGlowClear();
@@ -1354,7 +1408,8 @@ function vFeed(){
   const chipsRow=`<div class="feedchips">${sw?`<span class="badge strength">${esc(sw)}</span>`:''}<span class="badge">New</span>${fresh(l)?'<span class="badge hot">Hot</span>':''}</div>`;
   const amt=amountText(l.amount);
   const card=state.feedExpanded
-    ? `<div class="feedcard" id="feedCard">${chipsRow}
+    ? `<div class="feedcard expanded" id="feedCard">${chipsRow}
+      <div class="feedscroll">
       <div class="feedtitle">${esc(l.title)}</div>
       <div class="rows" style="margin-top:14px">
         <div class="row"><span>County</span><b>${esc(l.area)}</b></div>
@@ -1366,10 +1421,12 @@ function vFeed(){
         ${l.updatedAt?`<div class="row"><span>Updated</span><b>${esc(new Date(l.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}))}</b></div>`:''}
       </div>
       ${l.intent?`<p class="feedintent">${esc(l.intent)}</p>`:''}
+      </div>
       <div class="stack" style="margin-top:16px">
         <button class="bigbtn primary" id="feedContactBtn">Contact</button>
-        ${state.feedSwipe?'<button class="bigbtn" id="feedCollapseBtn">Collapse</button>':''}
-      </div>${state.feedSwipe?'':feedCardBtns()}</div>`
+      </div>
+      ${state.feedSwipe?`<div class="feeddecide"><button class="feedbtn" id="feedCollapseBtn">Collapse</button><button class="feedbtn primary" data-feedbtn="approve">Approve</button><button class="feedbtn" data-feedbtn="archive">Archive</button></div>`:''}
+      ${state.feedSwipe?'':feedCardBtns()}</div>`
     : `<div class="feedcard" id="feedCard">${chipsRow}
       <div class="feedtitle">${esc(l.title)}</div>
       <div class="feedmeta">${esc(l.area)} · ${typeLabel(l)}</div>
@@ -1484,6 +1541,23 @@ function render(){
   ({login:vLogin,create:vCreate,forgot:vForgot,setpassword:vSetPassword,choose:vChoose,home:vHome,opps:vOpps,feed:vFeed,list:vList,detail:vDetail,insights:vInsights,status:vStatus,help:vHelp,search:vSearch,loading:vLoading,error:vError}[state.screen]||vLogin)();
 }
 
+/* Reveal password toggle (Hayden, 2026-11-25): flips the paired
+   password field between type "password" and "text" so the user
+   can check their typing, and flips its own label between Show
+   and Hide to match, with aria-pressed carrying the state. Each
+   field's toggle is independent (data-reveal names the field
+   id), and because every render rebuilds the field as
+   type="password" with a fresh Show label, the toggle resets to
+   hidden whenever the screen re-renders. The field's value is
+   never read or written here, so the submit flows are
+   undisturbed. */
+function togglePwReveal(btn){
+  const f=$(btn.dataset.reveal); if(!f) return;
+  const show=f.type==='password';
+  f.type=show?'text':'password';
+  btn.textContent=show?'Hide':'Show';
+  btn.setAttribute('aria-pressed',String(show));
+}
 async function attemptLogin(){
   const u=($('u')?.value||'').trim(), p=$('p')?.value||'';
   if(!u){$('u')?.focus(); return}
@@ -1665,8 +1739,9 @@ document.addEventListener('click',e=>{
      their own branches below. */
   if(state.undoOpen&&!e.target.closest('#undoRoot')) closeUndoPanel();
   const z=e.target.closest('[data-feedzone]');
-  if(z){ if(state.screen==='feed') feedAction(z.dataset.feedzone); return; }
+  if(z){ if(state.screen==='feed'&&!feedSwipePaused()) feedAction(z.dataset.feedzone); return; }
   const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.reveal){togglePwReveal(b); return}
   if(state.screen==='feed'&&state.feedSwipeAt&&Date.now()-state.feedSwipeAt<250) return;
   if(b.id==='loginBtn'){attemptLogin(); return}
   if(b.id==='createBtn'){attemptCreate(); return}
@@ -1786,6 +1861,9 @@ document.addEventListener('keydown',e=>{
      act only when the feed itself has focus (the card or the
      page body). */
   if(state.screen==='feed'&&state.feedSwipe&&e.key.startsWith('Arrow')&&!$('popupRoot').innerHTML){
+    /* Swipe pause: an expanded card takes no arrow-key decisions
+       either; its bottom button row is the way to decide. */
+    if(feedSwipePaused()) return;
     const ae=document.activeElement;
     const onControl=ae&&(['BUTTON','SELECT','INPUT','TEXTAREA'].includes(ae.tagName)||ae.isContentEditable);
     if(!onControl){
