@@ -236,6 +236,21 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
   font-size:17px; font-weight:650; cursor:pointer;
 }
 .feedbtn.primary{background:linear-gradient(180deg,#25c8e8,#17a8c8); color:#04121a; border-color:transparent; font-weight:780}
+.feedbtn:disabled{opacity:.45; cursor:default}
+/* More info on the standard swipe-mode card (Hayden, 2026-11-25):
+   expansion is button-only now (swipe down means previous), so
+   the standard card carries this one small quiet button under
+   its meta lines. It is a real button, so a press on it never
+   starts a card drag (the drag wiring bails on buttons). */
+.feedmore{
+  display:block; margin:14px auto 0; padding:8px 14px;
+  background:none; border:0; color:var(--muted);
+  font-size:15px; font-weight:600; text-decoration:underline; text-underline-offset:4px; cursor:pointer;
+}
+/* Feed list view (Hayden, 2026-11-25): rows reuse the .row /
+   .leadbtn list styling; Advanced mode hangs the full field
+   set under each row in a matching .rows block. */
+.feedlist-fields{margin-top:8px}
 /* Expanded card in swipe mode (Hayden, 2026-11-25): while a card
    is expanded, swipe mode pauses (see feedSwipePaused), so the
    card becomes a reading surface instead: a flex column capped
@@ -305,6 +320,19 @@ select.field.feedselect{width:auto; min-height:36px; padding:6px 10px; margin:0;
   .panel{padding:30px 20px 28px; border-radius:24px}
   .with-corners{padding-top:48px}
   .bigbtn{font-size:18px; min-height:60px}
+  /* Mobile float sizing (Hayden, 2026-11-25): on phone widths
+     the floating controls shrink: the Undo cluster buttons, the
+     feed Back float, and the Concierge float all get smaller
+     padding, font, and min-height, and the Concierge collapses
+     to just the chat bubble (its label span hides; the button
+     keeps its aria-label). Desktop and tablet keep the base
+     rules above untouched. */
+  .concierge-float{min-height:44px; padding:10px 14px; font-size:16px}
+  .concierge-label{display:none}
+  .feed-back-float{min-height:44px; padding:10px 16px; font-size:15px}
+  .undo-main,.undo-chev{min-height:40px; font-size:14px}
+  .undo-main{padding:8px 12px}
+  .undo-chev{width:40px; padding:8px 0}
 }
 </style>
 </head>
@@ -347,6 +375,7 @@ const state={
   feedStatus:'all', feedStrength:'all', feedType:'all', feedArea:'all', feedIndex:0,
   feedExpanded:false, feedBusy:false, feedErr:'', feedDemo:true,
   feedDemoActions:0, feedSwipeAt:0, feedSwipe:true,
+  feedView:'cards', feedSort:'recommended', feedAdvanced:false, detailBack:'list',
   undoActions:null, undoOpen:false, undoBusy:false,
   loginErr:'', createMsg:'', ticketId:null, busy:false, fatalErr:''
 };
@@ -552,8 +581,10 @@ function renderFeedHint(show){
   const root=$('feedHintRoot'); if(!root) return;
   /* While a card is expanded, swipe mode is paused: the hint
      would invite gestures that cannot land, so it hides until
-     the card collapses or is decided. */
+     the card collapses or is decided. In list view there are
+     no gestures at all, so it hides there too. */
   if(state.feedExpanded) show=false;
+  if(state.feedView==='list') show=false;
   root.innerHTML=show&&state.feedSwipe?`<div class="feedhint"><div class="feedhint-main">Swipe, drag, or tap the lead.</div><button class="feedhint-off" id="feedHintOff" type="button" aria-label="Show me the swipe mode toggle">turn off</button></div>`:'';
 }
 const FEED_HINT_PULSE_MS=2000;
@@ -707,7 +738,7 @@ function cornersFeed(){ return `<button class="helpbtn" data-nav="help" aria-lab
    loading, error) never do, so the button clears there. */
 function renderConcierge(show){
   const root=$('conciergeRoot'); if(!root) return;
-  root.innerHTML=show?`<button class="concierge-float" id="conciergeBtn">💬 Concierge</button>`:'';
+  root.innerHTML=show?`<button class="concierge-float" id="conciergeBtn" aria-label="Concierge">💬 <span class="concierge-label">Concierge</span></button>`:'';
 }
 
 function vLoading(){
@@ -852,12 +883,17 @@ function vList(){
    One floating card at a time over the undecided queue (status
    'new'), hot leads first, then strongest. Four directions, one set
    of action functions shared by swipe, tap zones, and arrow keys:
-   up = next, down = expand, right = approve, left = archive.
+   up = next, down = previous (back to a skipped lead), right =
+   approve, left = archive (gesture map revised by Hayden,
+   2026-11-25: down used to expand; expansion is button-only now,
+   from the small More info button on the card). A View toggle in
+   the filter row switches the feed between these cards and a
+   scrollable list of the same queue (see feedListQueue).
    A Swipe mode toggle in the filter row (state.feedSwipe, default
    on) turns ALL directional input off: no drag, no tap zones, no
-   arrow keys, no demo. The card then carries the four actions
-   as buttons (Next, Approve, Archive, More info) through the same
-   feedAction dispatcher.
+   arrow keys, no demo. The card then carries the actions
+   as buttons (Previous, Next, Approve, Archive, More info) through
+   the same feedAction dispatcher.
    Directional edge glow and a footer instruction hint (Hayden,
    2026-11-24): the screen edge toward the active direction glows
    in that direction's color, with intensity following the card's
@@ -869,8 +905,8 @@ function vList(){
    the card itself is pulled toward one direction at a time, in a
    paced loop (up, right, down, left), and a bare floating text
    naming that direction's action pops up on the side the card is
-   pulled toward: up "Next lead", right "Approve", down "More
-   info", left "Archive". Only one description is visible at a
+   pulled toward: up "Next lead", right "Approve", down "Previous
+   lead", left "Archive". Only one description is visible at a
    time. The pull is deliberately unmistakable (FEED_DEMO_PULL_PX,
    strengthened the same night at Hayden's direction so the card
    visibly LEANS into the direction its description names): it
@@ -905,7 +941,7 @@ const FEED_DEMO_PAUSE_MS=500;
 const FEED_DEMO_STEPS=Object.freeze([
   {dir:'up', cls:'up', text:'Next lead', x:0, y:-FEED_DEMO_PULL_PX, rot:0},
   {dir:'approve', cls:'right', text:'Approve', x:FEED_DEMO_PULL_PX, y:0, rot:3},
-  {dir:'down', cls:'down', text:'More info', x:0, y:FEED_DEMO_PULL_PX, rot:0},
+  {dir:'down', cls:'down', text:'Previous lead', x:0, y:FEED_DEMO_PULL_PX, rot:0},
   {dir:'archive', cls:'left', text:'Archive', x:-FEED_DEMO_PULL_PX, y:0, rot:-3},
 ]);
 let feedIdleTimer=null;
@@ -933,6 +969,51 @@ function openFeed(preset){
   state.feedErr=''; state.feedDemo=true; state.feedDemoActions=0;
   loadUndoActions();
   go('feed');
+}
+/* List view ordering (Hayden, 2026-11-25): Recommended is the
+   queue's native order (hot first, then strength descending).
+   Every other sort reorders a copy for the list only; the card
+   feed's order never changes. Newest and Oldest read the lead's
+   age in hours (the DTO carries no separate timestamp: toLead
+   derives age from the source posted time), so Newest is age
+   ascending and Oldest age descending. Name is a plain A-to-Z
+   title sort. */
+function feedListQueue(q){
+  if(state.feedSort==='strength') return [...q].sort((a,b)=>strength(b)-strength(a));
+  if(state.feedSort==='newest') return [...q].sort((a,b)=>a.age-b.age);
+  if(state.feedSort==='oldest') return [...q].sort((a,b)=>b.age-a.age);
+  if(state.feedSort==='name') return [...q].sort((a,b)=>String(a.title??'').localeCompare(String(b.title??'')));
+  return q;
+}
+/* The full field set for one lead, with the same labels the
+   expanded card renders: County, Type, Amount (only when the
+   lead carries one), Contact, Status, Posted, Updated (only
+   when present). Advanced list rows show these under the basic
+   row; absent values are skipped, never filled in. */
+function leadFieldRows(l){
+  const amt=amountText(l.amount);
+  return `<div class="row"><span>County</span><b>${esc(l.area)}</b></div>
+        <div class="row"><span>Type</span><b>${typeLabel(l)}</b></div>
+        ${amt?`<div class="row"><span>Amount</span><b>${esc(amt)}</b></div>`:''}
+        <div class="row"><span>Contact</span><b>${esc(l.route)}</b></div>
+        <div class="row"><span>Status</span><b>${esc(statusLabel(l.status))}${l.pendingSync?' · Saving':''}</b></div>
+        <div class="row"><span>Posted</span><b>${esc(postedLabel(l))}</b></div>
+        ${l.updatedAt?`<div class="row"><span>Updated</span><b>${esc(new Date(l.updatedAt).toLocaleDateString(undefined,{month:'short',day:'numeric'}))}</b></div>`:''}`;
+}
+/* One list-view row: the basic fields on the tappable row
+   (title, area, type, strength word, freshness with age, amount
+   when present), opening the lead through the same data-lead
+   path the Approved and Archives rows use. Advanced mode adds
+   the full field set and the summary beneath the row. */
+function feedListRow(l){
+  const sw=strengthWord(l);
+  const amt=amountText(l.amount);
+  const meta=[esc(l.area), typeLabel(l), sw?esc(sw):'', (fresh(l)?'Hot':'New')+' · '+esc(ageLabel(l)), amt?esc(amt):''].filter(Boolean).join(' · ');
+  const adv=state.feedAdvanced?`<div class="rows feedlist-fields">${leadFieldRows(l)}${l.intent?`<p class="feedintent">${esc(l.intent)}</p>`:''}</div>`:'';
+  return `<div class="feedlist-item"><button class="row leadbtn" data-lead="${esc(l.id)}">
+      <span class="lt">${esc(l.title)}</span>
+      <span class="lm">${meta}</span>
+    </button>${adv}</div>`;
 }
 function clearFeedIdle(){ if(feedIdleTimer){ clearTimeout(feedIdleTimer); feedIdleTimer=null; } }
 /* Arm the 6-second idle timer. Called at the end of every feed
@@ -988,6 +1069,15 @@ function feedDemoPull(){
   const card=$('feedCard'); const tip=$('feedDemoTip');
   if(!card||!tip){ stopFeedDemo(); return; }
   const s=FEED_DEMO_STEPS[feedDemoStep%FEED_DEMO_STEPS.length];
+  /* Down means previous, and at the first lead there is no
+     previous lead to go back to: the down step is skipped in
+     place (no pull, no tip), moving on to the next step after
+     the usual pause beat. */
+  if(s.dir==='down'&&state.feedIndex===0){
+    feedDemoStep++;
+    feedDemoTimer=setTimeout(feedDemoPull,FEED_DEMO_PAUSE_MS);
+    return;
+  }
   tip.textContent=s.text;
   tip.className='feeddemo '+s.cls+' show';
   card.style.transition=`transform ${FEED_DEMO_PULL_MS}ms cubic-bezier(.22,1.36,.36,1)`;
@@ -1048,7 +1138,30 @@ function feedUp(){
   if(state.feedExpanded){ state.feedExpanded=false; render(); return; }
   if(state.feedIndex<feedQueue().length){ state.feedIndex++; render(); }
 }
-function feedDown(){
+/* Previous (Hayden, 2026-11-25): skipping a lead changes no
+   status, so a skipped lead is still in the queue at its earlier
+   index and going back is a plain decrement: no command, no
+   status change, the lead lands exactly as it was. At the first
+   lead there is nowhere to go back to, so this is a no-op (a
+   down drag there has already sprung back by the time it lands
+   here). Reached through feedAction's down entry (swipe down,
+   the down tap zone, ArrowDown) and its prev entry (the
+   button-mode grid's Previous button); feedAction and this
+   handler both close the undo history panel, like every feed
+   navigation. Going back and then forward again is lossless,
+   and a decision made on an earlier lead after going back rides
+   feedDecide's existing queue handling unchanged. */
+function feedPrev(){
+  if(state.feedBusy) return;
+  closeUndoPanel();
+  if(state.feedIndex>0){ state.feedIndex--; state.feedExpanded=false; render(); }
+}
+/* Expand (Hayden, 2026-11-25): expansion is button-only. Swipe
+   down means previous now, so the full detail opens from the
+   small More info button on the standard swipe-mode card or
+   the button-mode grid's More info button; both dispatch 'more'
+   through feedAction to land here. */
+function feedExpand(){
   if(state.feedBusy||state.feedExpanded) return;
   if(!feedCurrent()) return;
   state.feedExpanded=true; render();
@@ -1061,7 +1174,7 @@ function feedAction(name){
   noteFeedDirectional();
   feedParticles(name);
   feedGlowPulse(name);
-  ({up:feedUp, down:feedDown, approve:feedApprove, archive:feedArchive})[name]?.();
+  ({up:feedUp, down:feedPrev, approve:feedApprove, archive:feedArchive, prev:feedPrev, more:feedExpand})[name]?.();
 }
 /* Approve and archive are ordinary status commands through the exact
    path the detail view uses: same endpoint, same Idempotency-Key,
@@ -1222,7 +1335,8 @@ function magnetOffset(dx,dy){ return {x:magnetAxis(dx), y:magnetAxis(dy)}; }
    with an overshoot ease; at or past it the card flies off in
    that direction, starting from its rendered (magnet-adjusted)
    position, and only then registers the action; expand (down) is
-   the exception: it settles back and expands in place. The chase
+   the exception: it settles back and the previous action
+   registers from the settled card. The chase
    loop is cancelled on release before the spring-back or fly-off
    transition takes over, so the two never fight. With reduced
    motion there is no chase and no magnet: the card follows the
@@ -1319,7 +1433,7 @@ function wireFeedCard(){
 /* Tap fallback for devices that do not swipe: four invisible zones
    in the empty space around the floating lead card, sized from the
    card's own rectangle so they can never overlap the card itself.
-   Above = next, below = expand, right = approve, left = archive.
+   Above = next, below = previous, right = approve, left = archive.
    The zones are carved around every control that shares the
    screen: the filters row (marked data-nogesture) is cut out of
    the up and left zones from its own rectangle; the approve
@@ -1340,7 +1454,7 @@ function buildFeedZones(){
   const backReserveW=150;
   const fr=document.querySelector('[data-nogesture]')?.getBoundingClientRect()||null;
   const zones=document.createElement('div'); zones.id='feedZones';
-  const labels={up:'Next opportunity',down:'More info',approve:'Approve',archive:'Archive'};
+  const labels={up:'Next opportunity',down:'Previous opportunity',approve:'Approve',archive:'Archive'};
   const mk=(act,x,y,w,h)=>{
     if(w<8||h<8) return;
     const d=document.createElement('div');
@@ -1365,15 +1479,20 @@ function buildFeedZones(){
    'reviewing', archive 'passed', and errors and particle
    confirmations behave identically. Expanded, More info is
    replaced by Collapse, which dispatches 'up': exactly what the
-   up gesture does on an expanded card. The buttons are ordinary
-   card buttons, and a press on one never starts a drag (the drag
-   wiring is not even attached in this mode, and its pointerdown
-   guard already bails on buttons). */
+   up gesture does on an expanded card. Previous (2026-11-25)
+   dispatches 'prev' to feedPrev and is disabled at the first
+   lead, where there is nothing to go back to; More info
+   dispatches 'more' to feedExpand, the same expansion the
+   swipe-mode card's More info button uses. The buttons are
+   ordinary card buttons, and a press on one never starts a drag
+   (the drag wiring is not even attached in this mode, and its
+   pointerdown guard already bails on buttons). */
 function feedCardBtns(){
   const info=state.feedExpanded
     ? `<button class="feedbtn" data-feedbtn="collapse">Collapse</button>`
-    : `<button class="feedbtn" data-feedbtn="down">More info</button>`;
+    : `<button class="feedbtn" data-feedbtn="more">More info</button>`;
   return `<div class="feedbtns">
+    <button class="feedbtn" data-feedbtn="prev" ${state.feedIndex>0?'':'disabled'}>Previous</button>
     <button class="feedbtn" data-feedbtn="up">Next</button>
     <button class="feedbtn primary" data-feedbtn="approve">Approve</button>
     <button class="feedbtn" data-feedbtn="archive">Archive</button>
@@ -1391,12 +1510,41 @@ function vFeed(){
     .map(([v,n])=>`<option value="${v}"${state.feedStatus===v?' selected':''}>${n}</option>`).join('');
   const strengthOpts=[['all','All'],['Strong','Strong'],['Solid','Solid'],['Fair','Fair'],['Light','Light']]
     .map(([v,n])=>`<option value="${v}"${state.feedStrength===v?' selected':''}>${n}</option>`).join('');
+  const viewToggle=`<button class="chip${state.feedView==='list'?' on':''}" id="feedViewToggle" aria-pressed="${state.feedView==='list'}">View: ${state.feedView==='list'?'List':'Cards'}</button>`;
+  const sortOpts=[['recommended','Recommended'],['strength','Strength'],['newest','Newest'],['oldest','Oldest'],['name','Name A to Z']]
+    .map(([v,n])=>`<option value="${v}"${state.feedSort===v?' selected':''}>${n}</option>`).join('');
+  const listCtl=state.feedView==='list'?`<select class="field feedselect" id="feedSortSel" aria-label="Sort by">${sortOpts}</select>
+  <button class="chip${state.feedAdvanced?' on':''}" id="feedAdvancedToggle" aria-pressed="${state.feedAdvanced}">Advanced: ${state.feedAdvanced?'On':'Off'}</button>`:'';
   const filters=`<div class="feedfilters" data-nogesture>${chips}
   <select class="field feedselect" id="feedStatusSel" aria-label="Status filter">${statusOpts}</select>
   <select class="field feedselect" id="feedStrengthSel" aria-label="Strength filter">${strengthOpts}</select>
   <select class="field feedselect" id="feedAreaSel" aria-label="Area filter"><option value="all">All areas</option>${areas.map(a=>`<option value="${esc(a)}"${state.feedArea===a?' selected':''}>${esc(a)}</option>`).join('')}</select>
+  ${viewToggle}${listCtl}
   <button class="chip${state.feedSwipe?' on':''}" id="feedSwipeToggle" aria-pressed="${state.feedSwipe}">Swipe mode: ${state.feedSwipe?'On':'Off'}</button></div>`;
   const q=feedQueue();
+  if(state.feedView==='list'){
+    /* List view (Hayden, 2026-11-25): the same filtered queue
+       as one scrollable list instead of cards. No swipe chrome
+       at all: no drag wiring, no tap zones, no demo, no glow,
+       and no footer hint (renderFeedHint hides it in this
+       mode). The Undo cluster, the filters, and the Back float
+       stay available, and the caught-up state keeps the filter
+       row, so the view toggle stays reachable. */
+    clearFeedIdle();
+    stopFeedDemo();
+    feedGlowClear();
+    if(!q.length){
+      bare(`<h1 class="title">${title}</h1>${filters}
+    <div class="empty">You are all caught up.</div>
+    <div class="stack"><button class="bigbtn" id="feedBackBtn">Back to Opportunities</button></div>`, cornersFeed(), true);
+      return;
+    }
+    const items=feedListQueue(q).map(l=>feedListRow(l)).join('');
+    bare(`<h1 class="title">${title}</h1>${filters}
+  <div class="rows feedlist">${items}</div>
+  ${state.feedErr?`<p class="demo" style="color:#ff9d9d">${esc(state.feedErr)}</p>`:''}`, cornersFeed(), true);
+    return;
+  }
   const l=q[state.feedIndex]||null;
   if(!l){
     bare(`<h1 class="title">${title}</h1>${filters}
@@ -1431,7 +1579,7 @@ function vFeed(){
       <div class="feedtitle">${esc(l.title)}</div>
       <div class="feedmeta">${esc(l.area)} · ${typeLabel(l)}</div>
       ${amt?`<div class="feedamount">${esc(amt)}</div>`:''}
-      <div class="feedmeta">Posted ${esc(postedLabel(l))}</div>${state.feedSwipe?'':feedCardBtns()}</div>`;
+      <div class="feedmeta">Posted ${esc(postedLabel(l))}</div>${state.feedSwipe?'':feedCardBtns()}${state.feedSwipe?`<button class="feedmore" data-feedbtn="more">More info</button>`:''}</div>`;
   /* The demo tip: one bare floating text element the demo engine
      positions and fills per step (see FEED_DEMO_STEPS). It renders
      empty and invisible; the engine drives it. The visually
@@ -1439,7 +1587,7 @@ function vFeed(){
      that no visible labels remain. Both exist only in swipe mode;
      in button mode the card's buttons name themselves. */
   const demo=state.feedSwipe
-    ? `<div class="feeddemo" id="feedDemoTip" aria-hidden="true"></div><span class="sr-only">Swipe up for next lead, down for more info, right to approve, left to archive.</span>`:'';
+    ? `<div class="feeddemo" id="feedDemoTip" aria-hidden="true"></div><span class="sr-only">Swipe up for next lead, down for previous lead, right to approve, left to archive.</span>`:'';
   bare(`<h1 class="title">${title}</h1>${filters}
   <div class="feedpos">${state.feedIndex+1} of ${q.length} · ${q.length-state.feedIndex-1} left</div>
   <div class="feedstage">${card}${demo}</div>
@@ -1479,7 +1627,7 @@ function vDetail(){
     <button class="bigbtn primary" id="contactBtn">Contact</button>
     <button class="bigbtn" id="doNext">${esc(label)}</button>
     ${statuses.slice(0,3).map(s=>`<button class="bigbtn" data-status="${s}">Mark as ${esc(statusLabel(s).toLowerCase())}</button>`).join('')}
-  </div>`, corners('list'), true);
+  </div>`, corners(state.detailBack||'list'), true);
 }
 function insightRows(view){
   const ls=leads();
@@ -1765,6 +1913,8 @@ document.addEventListener('click',e=>{
   if(b.dataset.list){state.oppView=b.dataset.list; return go('list')}
   if(b.dataset.feedtype){closeUndoPanel(); state.feedType=b.dataset.feedtype; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render(); return}
   if(b.id==='feedSwipeToggle'){closeUndoPanel(); state.feedSwipe=!state.feedSwipe; if(state.feedSwipe){state.feedDemo=true; state.feedDemoActions=0;} render(); return}
+  if(b.id==='feedViewToggle'){closeUndoPanel(); state.feedView=state.feedView==='list'?'cards':'list'; state.feedExpanded=false; state.feedErr=''; render(); return}
+  if(b.id==='feedAdvancedToggle'){closeUndoPanel(); state.feedAdvanced=!state.feedAdvanced; render(); return}
   if(b.id==='undoBtn'){quickUndo(); return}
   if(b.id==='undoMenuBtn'){toggleUndoPanel(); return}
   if(b.dataset.undo){const a=(state.undoActions||[]).find(x=>x.id===b.dataset.undo); if(a) runUndoRedo(a,'undo'); return}
@@ -1776,7 +1926,7 @@ document.addEventListener('click',e=>{
   if(b.id==='feedCollapseBtn'){state.feedExpanded=false; render(); return}
   if(b.id==='feedContactBtn'){const fl=feedCurrent(); if(fl){state.selected=fl.id; openContact();} return}
   if(b.dataset.county){state.oppView='county'; state.county=b.dataset.county; return go('list')}
-  if(b.dataset.lead){state.selected=b.dataset.lead; return go('detail')}
+  if(b.dataset.lead){state.selected=b.dataset.lead; state.detailBack=state.screen==='feed'?'feed':'list'; return go('detail')}
   if(b.dataset.insight){state.lastInsightsView=b.dataset.insight; return go('insights')}
   if(b.dataset.status){setStatus(b.dataset.status); return}
   if(b.id==='contactBtn'){openContact(); return}
@@ -1848,6 +1998,7 @@ document.addEventListener('change',e=>{
   if(e.target.id==='feedAreaSel'){closeUndoPanel(); state.feedArea=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
   if(e.target.id==='feedStatusSel'){closeUndoPanel(); state.feedStatus=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
   if(e.target.id==='feedStrengthSel'){closeUndoPanel(); state.feedStrength=e.target.value; state.feedIndex=0; state.feedExpanded=false; state.feedErr=''; render();}
+  if(e.target.id==='feedSortSel'){closeUndoPanel(); state.feedSort=e.target.value; render();}
 });
 document.addEventListener('click',e=>{ if(e.target.id==='overlay') closePopup(); });
 document.addEventListener('keydown',e=>{
